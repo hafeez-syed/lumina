@@ -1,0 +1,63 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Required by `tsx` (agent + gateway dev scripts). Without this, pnpm gates
+# esbuild's install script and every `pnpm run` fails its dep-status check.
+allowBuilds:
+  esbuild: true
+
+catalog:
+  # Framework / runtime
+  next: 16.3.5
+  react: 19.3.0
+  react-dom: 19.3.0
+  zod: ^4.6.5
+
+  # Server / backend
+  cors: ^2.8.6
+  dotenv: ^17.4.2
+  express: ^5.2.1
+  mongodb: ^7.6.0
+  multer: ^2.4.0
+  pino: ^10.3.1
+  pino-http: ^11.0.0
+
+  # AI / document processing
+  "@mozilla/readability": ^0.6.0
+  jsdom: ^30.0.1
+  openai: ^7.15.0
+  pdfjs-dist: ^6.3.289
+
+  # Tooling
+  prettier: 3.9.6
+  tsx: ^4.23.13
+  turbo: ^2.10.12
+  typescript: 7.0.2
+
+  # Types
+  "@types/cors": ^2.8.19
+  "@types/express": ^5.0.6
+  "@types/jsdom": ^30.0.0
+  "@types/multer": ^2.2.0
+  "@types/node": 26.5.1
+  "@types/react": 19.3.0
+  "@types/react-dom": 19.3.0
+
+  # Lint
+  eslint: 10.10.0
+  "@eslint/js": 10.0.1
+  "@next/eslint-plugin-next": 16.3.5
+  eslint-config-prettier: 10.1.8
+  eslint-plugin-only-warn: 1.2.1
+  eslint-plugin-react-hooks: 7.1.1
+  eslint-plugin-turbo: 2.10.13
+  globals: 17.12.0
+
+  # Babel (eslint parser toolchain)
+  "@babel/core": 8.0.5
+  "@babel/eslint-parser": 8.0.1
+  "@babel/preset-typescript": 8.0.1
+
+minimumReleaseAgeExclude:
+  - eslint-plugin-turbo@2.10.13
