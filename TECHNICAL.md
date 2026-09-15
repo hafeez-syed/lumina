@@ -3,9 +3,9 @@
 > **This is the build guide: commands, architecture, checklists, and what the gates
 > actually measure.** Keep it open while you work.
 >
-> Start at [`README.md`](README.md) if you have not run the app yet, and
-> [`PRD.md`](PRD.md) for what the product is and why. [`SPEC.md`](SPEC.md) is the
-> exhaustive specification written for a coding agent.
+> Start at [`README.md`](README.md) if you have not run the app yet.
+> [`AGENTS.md`](AGENTS.md) is the engineering contract, and `packages/contract/` is the
+> executable source of truth.
 >
 > **No number here is authoritative.** Thresholds live in `benchmark/sla.json`,
 > `expectations.json` and `eval/rubric.json`. If prose and JSON disagree, the JSON wins and
@@ -16,8 +16,8 @@
 ## Architecture
 
 Three moving parts. The **UI is done**. You build the **two backend services** — Express on the
-taught path — and one MongoDB Atlas cluster holds everything, vectors included. What is graded
-is the contract; see [`PRD.md`](PRD.md) on deviating from the stack.
+default path — and one MongoDB Atlas cluster holds everything, vectors included. The contract
+is what matters; the stack behind it is replaceable.
 
 ```
    ┌──────────────────────────────┐
@@ -57,27 +57,21 @@ store to keep in sync.
 
 ---
 
-## What's provided vs. what you build
+## Component map
 
-| Component | Status | Path |
-|-----------|--------|------|
-| React UI (query, quick/deep toggle, streaming, citation chips, sources rail with sub-question tags, plan panel, trace panel, memory panel, Spaces, `/evals`) | 🔨 **You** | `apps/web/` |
-| API contract as zod schemas + TypeScript types, for every route, SSE event and collection | ✅ Provided | `packages/contract/` |
-| Express skeletons returning `501` everywhere but `/health` | ✅ Provided | `apps/gateway/`, `apps/agent/` |
-| Atlas index script (2 vector + 1 text + TTL indexes from one JSON), and a run-log exporter | ✅ Provided | `scripts/` |
-| Benchmark + SLA (latency, grounding, recall, cache, decoupling, cost) | ✅ Provided | `benchmark/bench.mjs`, `benchmark/sla.json` |
-| RAG gold set (39 questions) + a 4-document CC BY corpus, 2 of them PDFs with stable page numbers | ✅ Provided | `eval/gold/` |
-| Rubric, the six-gate runner, the report builder, the quality kit | ✅ Provided | `eval/`, `quality/` |
-| The `/fde-lumina-eval` skill that turns a run into your `/evals` page | ✅ Provided | `.claude/skills/` |
-| **Express gateway** | 🔨 **You** | `apps/gateway/` |
-| **Express agent service** (the quick loop, deep search, tools, memory, RAG, jobs worker, run logs) | 🔨 **You** | `apps/agent/` |
+| Component | Path |
+|-----------|------|
+| Web UI (query, quick/deep toggle, streaming, citation chips, sources rail with sub-question tags, plan panel, trace panel, memory panel, Spaces, `/evals`) | `apps/web/` |
+| API contract as zod schemas + TypeScript types, for every route, SSE event and collection | `packages/contract/` |
+| **Express gateway** — CORS, auth header, request id, logging, validation, rate limit, SSE pass-through | `apps/gateway/` |
+| **Express agent service** — the quick loop, deep search, tools, memory, RAG, jobs worker, run logs | `apps/agent/` |
+| Atlas index script (2 vector + 1 text + TTL indexes from one JSON), and a run-log exporter | `scripts/` |
+| Benchmark + SLA (latency, grounding, recall, cache, decoupling, cost) | `benchmark/` |
+| RAG gold set (39 questions) + a 4-document CC BY corpus, 2 of them PDFs with stable page numbers | `eval/gold/` |
+| Six-gate runner, report builder, quality kit | `eval/`, `quality/` |
 
-Everything marked provided is installed, type-checked and runnable before you write a line.
-The grader has been exercised end to end against a stub backend, so when it fails you, it is
-failing on your code and not on itself.
-
-You should not need to edit `packages/contract/`, `benchmark/`, `eval/`, `quality/` or
-`scripts/`. Read them to understand the contract, then build a backend that satisfies it.
+`packages/contract/`, `benchmark/`, `eval/`, `quality/` and `scripts/` are treated as fixed:
+read them to understand the contract, then build against it.
 `packages/contract/src/` is the best half hour you can spend before you start: it is the answer
 to "what exactly am I supposed to return?", and the UI compiles against the same types, so drift
 fails `pnpm check-types` before it fails you.
@@ -88,7 +82,7 @@ fails `pnpm check-types` before it fails you.
 
 ## The API contract (do not change it)
 
-The full contract, with every SSE event and status code, is in [`SPEC.md` §7](SPEC.md#7--api-contract-fixed-the-ui-speaks-this) and enforced by `packages/contract/`. The rules that matter:
+The full contract, with every SSE event and status code, is enforced by `packages/contract/`. The rules that matter:
 
 - `POST /threads/{id}/ask` streams `trace → sources → token → done`. **`sources` arrives before the first `token`.**
 - Every `[n]` in the answer has exactly one matching `n` in `sources`. Extra or missing is a grounding failure.
@@ -97,7 +91,7 @@ The full contract, with every SSE event and status code, is in [`SPEC.md` §7](S
 - `depth: "deep"` streams a `plan` event **before any retrieval**, tags every `trace` step and `source` with its `subQuestion`, and merges everything into one contiguous citation numbering. `depth` defaults to `"quick"` and the server never upgrades a request itself.
 - `X-User-Id` is required on every route except `/health` (`401` without it). `429` for rate limit or the deep-search daily cap. `502` for any upstream failure.
 - `GET /health` names the LLM, search provider, and vector backend. `GET /stats` reconciles with your logs.
-- `GET /evals/report.json` serves the Product Evaluation your eval skill wrote (shape in [`SUBMISSION.md`](../../../SUBMISSION.md)); the provided UI renders it at `/evals`.
+- `GET /evals/report.json` serves the Product Evaluation your eval skill wrote ; the UI renders it at `/evals`.
 
 ---
 
@@ -126,7 +120,7 @@ has no Vector Search — run with `VECTOR_BACKEND=mongo-cosine-scan` and make `/
 2. Search cache: in-process LRU over the `searchCache` collection (TTL index). `searchCached` in `done`.
 3. `threads` + `messages`; follow-ups see the thread.
 4. Memory: `save_memory` / `recall_memory` over the `memories` vector index; `GET /memory`, `DELETE /memory/{id}`.
-5. Run log: one `runs/<requestId>.json` per answer (shape in `SPEC.md` §13). Ten lines. The gates read it.
+5. Run log: one `runs/<requestId>.json` per answer (shape in `packages/contract/src/report.ts`). Ten lines. The gates read it.
 6. Spaces + the `jobs` worker: upload → GridFS → parse (`pdfjs-dist`) → chunk → embed → upsert → **read-your-write probe** → `indexed`.
 7. Hybrid retrieval: `$vectorSearch` + `$search` fused with RRF. Page locators in citations.
 8. **Deep search**, in two sittings. First `plan_research` and the `plan` event: stream it before you retrieve anything, then read three plans out loud. If the sub-questions are not ones you would have asked, fix the prompt before building anything on top of it. Then the fan-out: research each sub-question, merge into one citation numbering (dedupe by URL or `docId`+locator, renumber from 1), tag every step and source with its `subQuestion`, synthesise a structured answer. Finally the gate: `DEEP_DAILY_CAP` → `429 {error, resetsAt}`, and make sure a quick search cannot reach `plan_research`.
@@ -144,28 +138,10 @@ CORS · `X-User-Id` check · `X-Request-Id` (reuse inbound or generate) · `pino
 ### Part 3: see it live
 `pnpm dev`, open the UI, ask a question, click a citation. Save a preference, open a new thread, watch it apply. Upload a PDF to a Space, ask about it, see `filename, p. N`. Then ask the *same* question twice — once on Quick, once on Deep — and put the two answers side by side. If the deep one is only longer, you have not finished.
 
-### Part 4: ship it, and submit a URL
+### Part 4: ship it
 
-**Which piece goes where.** Three deployables, and only the first is fixed:
-
-| Piece | Host | Fixed? |
-|---|---|---|
-| The UI (`apps/web/`) | **Vercel** — and this URL is your submission | Yes. It has to serve `/` and `/evals` to a stranger. |
-| The gateway | Fly.io, or Vercel functions, or anywhere reachable | **Your choice.** It must be public, because the browser talks to it. |
-| The agent service | Fly.io (private networking), or anywhere | **Your choice**, but it must NOT be publicly reachable — it holds the keys and enforces the deep-search cap. A cap you can bypass by calling the service directly is not a cap. |
-| MongoDB | Atlas, wherever your cluster already is | Stays put. |
-
-So "submit a Vercel URL" and "deploy to Fly.io" are not in conflict: the UI is on Vercel
-because that is the link you hand in, and the backends go wherever you like. If you would
-rather run everything on Vercel functions, do that — the grader only ever talks to your
-gateway over HTTP.
-
-```bash
-cd apps/agent      && fly launch --no-deploy && fly secrets set MONGODB_URI=... ANTHROPIC_API_KEY=... TAVILY_API_KEY=... OPENAI_API_KEY=... && fly deploy
-cd ../gateway      && fly launch --no-deploy && fly secrets set AGENT_URL=https://<your-agent>.fly.dev && fly deploy
-cd ../web          && vercel --prod          # NEXT_PUBLIC_API_URL=https://<your-gateway>.fly.dev
-```
-Atlas stays where it is. Keep the agent service private (Fly private networking) so only the gateway reaches it. The **Vercel URL of the UI is your submission**; it must serve `/evals` (rendered by the provided UI from `GET /evals/report.json` on your gateway). Your eval must pass against the **deployed** gateway. Running the gateway itself as Vercel functions is fine too.
+Three deployables — the UI, the gateway, and the agent service (which must stay private).
+Hosts, commands and the evaluation run are in [Deploy](#deploy) below.
 
 ---
 
@@ -219,7 +195,7 @@ names `quality/check.mjs` reads). Two things worth knowing before it judges you:
 
 ```bash
 node eval/eval.mjs                                             # all six, in order, stops at the first failure
-node eval/eval.mjs --deploy-url https://your-gateway.fly.dev   # what the grader runs
+node eval/eval.mjs --deploy-url https://your-gateway.fly.dev   # the full gate run
 ```
 
 Deployed instances write run logs to Mongo rather than to disk, so before the trajectory gate can
@@ -289,78 +265,33 @@ curl -sf https://<your-gateway>.fly.dev/health                                  
 
 ---
 
-## Grading (100 pts)
+## Deploy
 
-| Area | Pts | What we look for | Rules |
-|------|-----|------------------|-------|
-| UI lights up & contract | 10 | Fresh clone → README → UI streams a cited answer through the gateway; shapes and status codes match | C1 |
-| Search & cited answers | 20 | Grounding ≥ 95 %; `sources` before tokens; pages fetched; `searchCached` true on repeat | E2 |
-| Memory | 10 | Preference in thread A changes thread B; listed; deletable, and the effect disappears | |
-| RAG over documents | 15 | `202` → `indexed` via the worker; page locator; router picks docs; recall@5 ≥ 0.70 | E1, E2 |
-| Deep search | 15 | `plan` before retrieval, ≥ 3 sub-questions; `subQuestion` on every step and source; merged numbering resolves; ≥ 2× the sources of the same query run quick; inside the deep budget; cap + 1 → `429`; no quick run calls `plan_research` | E2, B3, R2 |
-| Deep search quality | 5 | One question, both gears, read by a person: deep must be *better*, not longer | E3 |
-| Performance & SLA | 10 | `node benchmark/bench.mjs` exits 0 | B1–B3, A2, A3 |
-| Observability | 5 | One request id across both logs; `/stats` reconciles; trace explains citations | A1 |
-| Human gate & answer quality | 5 | Both trajectories are readable on `/evals`, every step, with what each taught you; grader samples five answers | P1 |
-| Deploy & docs | 5 | UI on Vercel with `/evals` live; services on Fly.io or Vercel against Atlas; no key reachable from the browser; design section and run notes on the page | |
+Three deployables:
 
-**Red lines (auto-flagged):** secrets committed · provided `packages/contract/`, `benchmark/`, `eval/` edited · any fabricated citation in the bench sample (E2) · a `2xx` answer on a provider exception (A1) · a capped run reported as `done` (A2) · `plan_research` called from a quick search (R2).
+| Piece | Host | Notes |
+|---|---|---|
+| The UI (`apps/web/`) | Vercel | Serves `/` and `/evals`. |
+| The gateway | Fly.io, Vercel functions, anywhere reachable | Must be public — the browser talks to it. |
+| The agent service | Fly.io private networking, or anywhere | Must **not** be publicly reachable: it holds the provider keys and enforces the deep-search cap. A cap you can bypass by calling the service directly is not a cap. |
+| MongoDB | Atlas | — |
 
-**Bonus (+5):** you hit a failure the rules don't cover and submit it as a new rule with its real precedent.
+```bash
+cd apps/agent      && fly launch --no-deploy && fly secrets set MONGODB_URI=... ANTHROPIC_API_KEY=... TAVILY_API_KEY=... OPENAI_API_KEY=... && fly deploy
+cd ../gateway      && fly launch --no-deploy && fly secrets set AGENT_URL=https://<your-agent>.fly.dev && fly deploy
+cd ../web          && vercel --prod          # NEXT_PUBLIC_API_URL=https://<your-gateway>.fly.dev
+```
 
-### Sample scorecard
+Evaluation runs against the **deployed** gateway:
 
-Illustrative only. Your numbers come from your own run; fabricating them is an automatic fail.
+```bash
+node eval/eval.mjs --deploy-url https://<your-gateway>
+node eval/build-report.mjs --video <url> --design DESIGN.md \
+  --successful <requestId> --failing <requestId> --notes "<model · provider · Atlas tier>"
+```
 
-> **Assignment 1: LUMINA · Priya Nair · 91 / 100**
-
-| Criterion | Pts | Awarded | Status | Evidence |
-|-----------|-----|---------|--------|----------|
-| UI lights up & contract | 10 | 10 | ✅ Pass | All routes match; `sources` event lands 1.6 s before first token |
-| Search & cited answers | 20 | 19 | ✅ Pass | Grounding 97.3 % over 60 answers; 1 snippet-only synthesis flagged in trace |
-| Memory | 10 | 10 | ✅ Pass | "prefer TypeScript" saved in thr_1, applied in thr_2; deleted → plain prose again |
-| RAG over documents | 15 | 15 | ✅ Pass | 3 PDFs indexed via worker; `p. 14` citation; recall@5 0.77 |
-| Deep search | 15 | 12 | ⚠️ Partial | Plan lands in 1.8 s, 5 sub-questions, 14 merged citations all resolve, 3.1× quick's sources; but 2 of 4 deep runs left `subQuestion` off their sources |
-| Deep search quality | 5 | 4 | ⚠️ Partial | Sub-questions were ones a person would ask; the "what is still unknown" section was boilerplate on both runs |
-| Performance & SLA | 10 | 10 | ✅ Pass | TTFT p95 1.9 s; full p95 8.4 s; cache hit 58 %; $0.031/answer |
-| Observability | 5 | 5 | ✅ Pass | `req_7f3a` greppable in both logs; `/stats.answers` = log count |
-| Human gate & answer quality | 5 | 4 | ⚠️ Partial | Two trajectories named and annotated; one sampled answer padded |
-| Deploy & docs | 5 | 0 | ❌ Fail | Deployed, but the agent service was publicly reachable, so the deep cap could be bypassed by calling it directly |
-| **Total** | **100** | **91** | | Auto: 79/80 · Manual: 12/20 |
-
-**Red-line checks:** ✅ no secrets · ✅ provided folders untouched · ✅ no fabricated citation · ✅ no `2xx` on exception
-
----
-
----
-
-## Stretch goals (bonus)
-
-- **Subagent split**: run deep search's sub-questions as parallel isolated subagents instead of sequentially in one context; show the trace tree and the wall-clock drop (Week 2 material).
-- **Editable plan**: show the plan and let the user drop or rewrite a sub-question before the research runs. Perplexity does not do this and it is obviously better.
-- **Semantic answer cache** with a freshness guard, `answerCached: true` (Module 3).
-- **Change streams** on `documents` pushed over the existing SSE channel instead of polling.
-- **A richer UI** in `apps/web/` (Next.js on Vercel), still passing the contract.
-- **Docker Compose** for both services; a GitHub Action running the bench and `fly deploy` on green.
-
----
-
----
-
-## Submit
-
-You submit **one Vercel URL**. Course-wide rules in [`SUBMISSION.md`](../../../SUBMISSION.md). For LUMINA:
-
-1. **Run the eval against the deployed app.** In Claude Code run **`/fde-lumina-eval --deploy-url https://<your-gateway>`**. It runs the six gates (`eval/eval.mjs`, which drives `benchmark/bench.mjs` and `quality/check.mjs`), walks you through both trajectories, then calls `eval/build-report.mjs` to assemble `report.json` from the run artifacts — every number is read out of `reports/`, none is retyped. Serve it at `GET /evals/report.json` and redeploy. If you would rather run it by hand:
-   ```bash
-   node eval/eval.mjs --deploy-url https://<your-gateway>
-   node eval/build-report.mjs --student "Your Name" --video <url> --design DESIGN.md \
-     --successful <requestId> --failing <requestId> --notes "<model · provider · Atlas tier>"
-   ```
-   The builder refuses a report built from a `--smoke` run, and exits non-zero if a red line was crossed.
-2. **Check `/evals` on your Vercel URL.** The provided UI renders the scored rubric, the SLA numbers, the gate results, your embedded video, and the repo link. Every number must come from that run.
-3. **The video (60 to 90 s)** shows: a quick question streaming with citations; the *same* question on Deep, with the plan appearing first and the merged citations at the end; a memory carrying into a new thread; a document question citing a page; and `/stats` showing the deep run's cost and your remaining daily allowance.
-4. **Post the Vercel URL.** That's the whole submission: **no repo, no zip, no code**. Your `DESIGN.md` (the five questions) and your "How I ran it" notes (LLM, search provider, Atlas tier) go into the eval config so they render on `/evals` too.
+`build-report.mjs` refuses a report built from a `--smoke` run, and exits non-zero if a red
+line was crossed. The result is served at `GET /evals/report.json` and rendered at `/evals`.
 
 ---
 

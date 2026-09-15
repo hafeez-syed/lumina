@@ -36,3 +36,9 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+
+# Local-only reference material (third-party docs, not ours to publish).
+.course/
+
+# Local-only eval tooling (kept on disk so the gates still run).
+.claude/skills/fde-lumina-eval/

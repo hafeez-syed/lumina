@@ -3,7 +3,7 @@
 > Copy this to `DESIGN.md` and answer the five questions **before you open an editor**.
 > `eval/build-report.mjs` reads it by heading, so keep the five headings; everything under
 > each one is yours. It renders as the design section of your `/evals` page, which means a
-> stranger reads it and grades it. Aim for a paragraph each — specific to the choices you
+> stranger reads it. Aim for a paragraph each — specific to the choices you
 > actually made, not a restatement of the PRD.
 >
 > Delete this block when you answer.

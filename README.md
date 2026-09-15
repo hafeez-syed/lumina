@@ -1,151 +1,109 @@
-# Assignment 1: LUMINA
+# LUMINA
 
-> Build a Perplexity-style AI search engine. Ask a question, get a streamed answer with
-> citations you can click, built from a live web search and from your own documents. Ask a
-> harder one and it plans sub-questions, researches each, and merges the citations.
+> A Perplexity-style AI search engine. Ask a question, get a streamed answer with citations
+> you can click, built from live web search and from your own documents. Ask a harder one and
+> it plans sub-questions, researches each, and merges the citations into one numbering.
 
-You are given a **typed API contract** and `501` skeletons for the two backend services. You
-build those services out. When your backend works, the UI lights up. That's the whole game.
+Two answer modes, deliberately separated:
 
-> [!IMPORTANT]
-> **The LUMINA React UI is not in this tree.** `apps/web` is currently the stock
-> Turborepo starter page. Building the UI is on you — see [Read this first](#read-this-first).
+| Mode | What it does | Envelope |
+| ---- | ------------ | -------- |
+| **Quick** (default) | One pass, a couple of searches, a cited answer in seconds | 8 tool calls / 90 s |
+| **Deep** | Plans sub-questions, researches each, merges the results | 24 tool calls / 240 s |
 
----
+The server never upgrades a request to deep on its own — cost stays a user decision.
 
-## Start here
+## Architecture
 
-```bash
-pnpm install
-cp .env.example .env      # fill in MONGODB_URI and your provider keys
-pnpm dev                  # web on :3000, gateway on :8787, agent on :8000
+A pnpm + Turborepo monorepo. The browser talks only to the gateway; provider keys live only
+in the agent service.
+
+```
+  apps/web  (Next.js 16 · React 19)          :3000
+       │  HTTP + SSE  (X-User-Id, X-Request-Id)
+       ▼
+  apps/gateway  (Express 5)                  :8787
+       │  CORS · zod validation · rate limit · SSE pass-through · request log
+       ▼
+  apps/agent  (Express 5)                    :8000
+       │  agent loop · tools · memory · RAG · deep search · jobs worker
+       ▼
+  MongoDB Atlas  (vector + text search, GridFS, TTL'd cache)
 ```
 
-Open <http://localhost:3000>. Every backend route answers `501 not implemented yet`, which is
-correct: that message is your progress bar, and each route you finish lights one up.
+| Package | Role |
+| ------- | ---- |
+| [`apps/web`](apps/web) | `@lumina/web` — the UI |
+| [`apps/gateway`](apps/gateway) | `@lumina/gateway` — the edge: auth header, validation, rate limits, SSE pass-through |
+| [`apps/agent`](apps/agent) | `@lumina/agent` — the agent loop, tools, memory, RAG, jobs worker |
+| [`packages/contract`](packages/contract) | `@lumina/contract` — zod schemas + types for every route, SSE event and document. Source of truth. |
+| [`packages/ui`](packages/ui) | `@lumina/ui` — shared React components |
+| `packages/eslint-config`, `packages/typescript-config` | shared tooling config |
+
+## Getting started
 
 Requires **Node >= 24** and **pnpm 11**.
 
-## Read this first
+```bash
+pnpm install
+cp .env.example .env      # MONGODB_URI, LLM key, SEARCH_PROVIDER + key, OPENAI_API_KEY
+node scripts/create-indexes.mjs          # vector + text + TTL indexes on Atlas
+node scripts/create-indexes.mjs --status # search indexes build async; wait for queryable
+pnpm dev                  # web :3000 · gateway :8787 · agent :8000
+```
 
-Older prose in `CHECKE.md`, `SPEC.md` and `TECHNICAL.md` describes a **provided React 18 + Vite
-UI at `web/` on port 5173**. That UI does not exist in this repository, and this monorepo is
-Next.js — not Vite. Two consequences:
+No Atlas? Run a plain local `mongod` and set `VECTOR_BACKEND=mongo-cosine-scan` — cosine
+scored in Node, fine up to a few thousand chunks.
 
-- The acceptance test those docs lean on ("load the UI and watch it light up") is not
-  available out of the box. Build the UI in `apps/web`, which `SPEC.md` already allows as
-  "Learner-built UI in Next.js on Vercel, still passing the contract".
-- Anywhere a doc says `web/`, `backend/gateway/`, `backend/agent/`, `npm`, `:5173` or `Vite`,
-  read it as the table under [Project layout](#project-layout).
-
-`packages/contract/` outranks all prose. Where a threshold is concerned,
-`benchmark/sla.json`, `expectations.json` and `eval/rubric.json` are the only authorities.
-
-## Then read, in this order
-
-| #   | Read                                                          | Why                                                                                                                                                             |
-| --- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | [`PRD.md`](PRD.md)                                            | What the product is and the four rules that decide your grade. ~15 min.                                                                                         |
-| 2   | `packages/contract/src/`                                      | The contract, as zod schemas rather than prose — the literal answer to "what do I return?". Start with `sse.ts`, then `http.ts`. Best half hour you can spend.  |
-| 3   | [`DESIGN.template.md`](DESIGN.template.md)                    | Copy to `DESIGN.md` and answer the five questions **before you write code**. It is graded.                                                                       |
-| 4   | `benchmark/sla.json`, `expectations.json`, `eval/rubric.json` | The targets, the budgets, the points. Declared before you run, on purpose.                                                                                      |
-| 5   | [`TECHNICAL.md`](TECHNICAL.md)                                | The build guide: architecture, commands, checklists, troubleshooting.                                                                                           |
-
-Your coding agent should read [`AGENTS.md`](AGENTS.md) and [`SPEC.md`](SPEC.md) instead — the
-first is the non-negotiables, the second is every requirement stated explicitly.
-
-## What you build
-
-|                 |                                                                                                                                                       |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| ✅ **Provided** | The API contract, `501` skeletons for both services, the Atlas index script, the benchmark, the gold set and corpus, the grader, and the eval skill.   |
-| 🔨 **Yours**    | `apps/gateway/` — the edge: CORS, the `X-User-Id` check, request ids, logging, validation, rate limits, SSE pass-through.                              |
-| 🔨 **Yours**    | `apps/agent/` — the work: the agent loop, its tools, memory, RAG, deep search, the jobs worker, run logs. Provider keys live only here.                |
-| 🔨 **Yours**    | `apps/web/` — the UI, since the provided one is absent. It must serve `/` and `/evals`.                                                                |
-
-Do not edit `packages/contract/`, `benchmark/`, `eval/`, `quality/` or `scripts/`. Those are
-the contract and the grader; editing them is a red line and it is checked.
-
-## Project layout
-
-A pnpm + Turborepo monorepo. Docs written against the old layout map like this:
-
-| Old (in `CHECKE.md`, `SPEC.md`, `TECHNICAL.md`) | Actual                                        |
-| ----------------------------------------------- | --------------------------------------------- |
-| `web/` — React 18 + Vite, `:5173`                | `apps/web/` — `@lumina/web`, Next.js 16 + React 19, `:3000` |
-| `backend/gateway/`                               | `apps/gateway/` — `@lumina/gateway`, Express 5, `:8787`     |
-| `backend/agent/`                                 | `apps/agent/` — `@lumina/agent`, Express 5, `:8000`         |
-| `packages/contract/`                             | unchanged — `@lumina/contract`, zod schemas + types         |
-| `npm install` / `npm run dev`                    | `pnpm install` / `pnpm dev`                                  |
-| `VITE_API_URL`                                   | `NEXT_PUBLIC_*`                                              |
-| `web/dist` served by the gateway                 | optional, via `WEB_DIST` (needs `output: 'export'`)          |
-| Node 20.19+                                      | Node >= 24                                                   |
-
-Shared packages: `@lumina/ui` (React components), `@lumina/eslint-config`,
-`@lumina/typescript-config`.
-
-Third-party dependency versions are centralized in the `catalog:` block of
-[`pnpm-workspace.yaml`](./pnpm-workspace.yaml); every package references them as `"catalog:"`,
-so a version is bumped in exactly one place.
-
-## The build, in one screen
-
-Build the agent service first — you can drive it entirely with `curl -N`, no browser needed.
-Then the gateway. Then the UI.
-
-1. `/health`, then the **quick loop** with `web_search` + `fetch_page`, streaming
-   `trace → sources → token → done`. Sources before the first token.
-2. The **search cache**: in-process LRU over a TTL'd Mongo collection.
-3. **Threads and messages**, so a follow-up sees the conversation.
-4. **Memory**: `save_memory` / `recall_memory`, listed and deletable at `/memory`.
-5. The **run log** — one file per answer. Ten lines of adapter, and the gates read it.
-6. **Spaces and the jobs worker**: upload → `202` → parse → chunk → embed → probe → indexed.
-7. **Hybrid retrieval**: vector + text, fused, with page locators in the citations.
-8. **Deep search**: plan sub-questions, research each, merge into one citation numbering.
-9. The **gateway**, then the **UI**, then the **deploy**.
-
-Each step is a section in [`TECHNICAL.md`](TECHNICAL.md) with the commands and the gotchas.
-
-## Common commands
+### Commands
 
 ```sh
-pnpm dev                          # every app in watch mode, via Turborepo
-pnpm build                        # build all apps and packages
+pnpm dev                            # everything in watch mode, via Turborepo
+pnpm build
 pnpm lint
 pnpm check-types
 
-pnpm dev --filter=@lumina/agent   # one app only
+pnpm dev --filter=@lumina/agent     # one app only
 pnpm --filter=@lumina/agent worker  # the jobs worker
 ```
 
-## How you prove it
+## How it works
 
-```bash
-node benchmark/bench.mjs      # the SLA: latency, grounding, recall, cache, cost. Exits 0 or tells you why.
-node quality/check.mjs .      # the rules, over your run logs
-node eval/eval.mjs            # all six gates, in order, stopping at the first failure
-```
+**Streaming.** `POST /threads/{id}/ask` streams `trace → sources → token → done`, with `plan`
+first on a deep search. `sources` is emitted *before* the first token, so citations are on
+screen while the answer is still being written. Every `[n]` in the text has exactly one
+matching entry in `sources`.
 
-Correct but slow, expensive, or ungrounded fails. The targets are in `benchmark/sla.json`,
-declared before your first run — [`TECHNICAL.md`](TECHNICAL.md) explains what each one
-measures and how the grounding check works.
+**Grounding.** Answers cite or they don't ship. A fabricated citation is a bug, not a
+cosmetic issue — the benchmark checks every claim's `[n]` against the sources actually
+retrieved.
 
-## How you submit
+**Failing loud.** A provider exception ends the run with `terminated: "error"` and a `502`.
+No `try/catch` that returns a plausible-looking answer when the real cause was a thrown
+exception.
 
-**One URL**: your deployed app, with `/` working for a stranger and `/evals` rendering the
-evaluation your run produced. No repo, no zip, no code.
+**Retrieval.** Uploaded documents are parsed, chunked, embedded and indexed by a background
+worker (upload returns `202`, never blocking the answer stream). Retrieval fuses vector and
+text search with RRF, and citations carry page locators (`filename, p. 4`).
 
-In Claude Code, run `/fde-lumina-eval --deploy-url https://<your-gateway>`. It runs the gates
-against the deployed app, walks you through your two trajectories, and writes the
-`report.json` the UI renders at `/evals`.
+**Caching.** Search results go through an in-process LRU over a TTL'd Mongo collection, so
+repeated questions don't re-bill the search provider.
 
-Full flow, the deploy table, and the 60–90 second video checklist:
-[`TECHNICAL.md`](TECHNICAL.md#submit) · course-wide rules:
-[`SUBMISSION.md`](../../../SUBMISSION.md).
+## Design notes
 
-## Stuck?
+[`TECHNICAL.md`](TECHNICAL.md) covers the architecture, the build order, performance and cost
+budgets, and troubleshooting. [`AGENTS.md`](AGENTS.md) is the engineering contract — the
+invariants any contributor (human or AI) has to preserve.
 
-[`TECHNICAL.md`](TECHNICAL.md#troubleshooting) covers the failures that cost people the most
-time: tokens arriving all at once, a document that indexes but cannot be found, retrieval that
-leaks across Spaces, uploads that stall the answer stream, and a "deep" search that is only
-slower.
+`packages/contract/` outranks prose: if a doc and a zod schema disagree, the schema is right.
+
+## Status
+
+Backend services are scaffolded and return `501` for routes that aren't implemented yet;
+`/health` is live and reports the model, search provider, vector store and DB status.
+`apps/web` is currently the starter page — the UI is being built out.
+
+## Notes
+
+`eval/gold/corpus/` contains third-party CC BY material — see `eval/gold/LICENSE-corpus.md`
+for attribution. No project license is declared yet; add a `LICENSE` file before publishing.

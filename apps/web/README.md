@@ -2,11 +2,9 @@
 
 The LUMINA web UI — a [Next.js](https://nextjs.org) app (App Router, React 19).
 
-> [!IMPORTANT]
-> This is currently the **stock Turborepo starter page**, not the LUMINA interface. The
-> React 18 + Vite UI that `SPEC.md` and `TECHNICAL.md` describe as "provided" is not present
-> in this repository. Building it here is part of the assignment — see the root
-> [`README.md`](../../README.md).
+> [!NOTE]
+> This is currently the **stock Turborepo starter page**, not the LUMINA interface — the UI
+> is still being built out. See the root [`README.md`](../../README.md).
 
 It must eventually serve:
 

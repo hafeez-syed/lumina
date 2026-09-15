@@ -1,13 +1,12 @@
-# AGENTS.md: non-negotiables for this assignment
+# AGENTS.md: engineering non-negotiables for LUMINA
 
-You are helping a student complete **Assignment 1: LUMINA**. This file is the contract you
-must satisfy. Do not relax, reinterpret, or "improve" these requirements. Conform to them.
+This file is the contract for anyone working on this codebase, human or AI. Do not relax,
+reinterpret, or "improve" these requirements. Conform to them.
 
-Your reading order: **`SPEC.md`** is the exhaustive specification and the one written for you
-— every requirement, status code and failure mode, stated explicitly. `packages/contract/`
-is the same thing as executable schemas and outranks all prose. `TECHNICAL.md` is the build
-guide (commands, checklists, the self-verify block). `README.md` is the short front door and
-`PRD.md` the short human product doc; read those for intent, never for numbers.
+Reading order: **`packages/contract/`** is the source of truth — the same requirements as
+executable zod schemas, and it outranks all prose. `TECHNICAL.md` is the build guide
+(architecture, commands, checklists). `README.md` is the short front door; read it for intent,
+never for numbers.
 
 Where a threshold is concerned, `benchmark/sla.json`, `expectations.json` and
 `eval/rubric.json` are the only authorities. If prose disagrees with them, the prose is
@@ -19,16 +18,16 @@ stale — say so rather than following it.
   rate limit, SSE pass-through) and `apps/agent/` (Express: the loop, tools,
   memory, RAG, deep search, the `jobs` worker, run logs).
 - **DO NOT EDIT:** `packages/contract/`, `benchmark/`, `eval/`, `quality/`, `scripts/`.
-  These are the contract and the grader. (`apps/web/` is NOT on this list: the provided Vite UI
-  is absent from this tree, so the Next.js UI in `apps/web/` is yours to build.) If something seems to require editing
+  These are the contract and the evaluation harness. `apps/web/` is not on this list — the UI
+  is ours to build. If something seems to require editing
   them, you've misread the contract. Editing them is a red line and it is checked.
 - **Keep a deliberately failed run in `runs/failing/`, not `runs/`.** Rule A2 grades every run in
   `runs/` and fails one that did not terminate as `done`; rule P1 requires you to keep a failing
   trajectory. The subfolder is how both hold at once — the trajectory rules read `runs/*.json`
   only, and `eval/build-report.mjs` reads both.
-- **Write `DESIGN.md` before any code.** It answers the five questions: components,
-  responsibilities, communication, state, trade-offs. It is graded as the design section of the
-  `/evals` page, so it must survive being read by a stranger.
+- **Keep `DESIGN.md` current.** It answers five questions: components, responsibilities,
+  communication, state, trade-offs. It is rendered on the `/evals` page, so it must survive
+  being read by a stranger.
 
 ## Hard requirements (all must hold)
 
@@ -63,8 +62,8 @@ stale — say so rather than following it.
   `depth`, ordered `toolCalls[{name, ok, error}]`. `node quality/check.mjs .` must be able to read
   it. Without `depth`, nobody can tell an expensive deep run from a quick run that ran away.
 
-### Grounding (this is the point of the assignment)
-- A citation that does not resolve to something retrieved **in that request** is an automatic fail.
+### Grounding (the whole point of the product)
+- A citation that does not resolve to something retrieved **in that request** is a defect, full stop.
 - Synthesize from fetched page text or indexed chunks, not from search snippets. If you fall back
   to snippets, say so in the trace.
 - Empty retrieval → say so and cite nothing. Never invent a URL, a page number, or a document.
@@ -84,7 +83,7 @@ stale — say so rather than following it.
 ### RAG (MongoDB Atlas)
 - `POST /spaces/{id}/documents` stores the file in GridFS, inserts a `pending` document and a
   `jobs` row, and returns `202` in < 300 ms. Parsing, chunking, embedding, and indexing happen on
-  the worker. A synchronous parse-then-respond endpoint fails the assignment even if it works.
+  the worker. A synchronous parse-then-respond endpoint is wrong even if it returns correct data.
 - One `chunks` collection, one vector index, `spaceId` as a filter field **inside** `$vectorSearch`.
 - Every chunk carries a locator: `{page}` for PDF, `{heading}` or `{line}` for text.
 - A document becomes `indexed` only after a **read-your-write probe** returns one of its chunks
@@ -92,10 +91,10 @@ stale — say so rather than following it.
 - Crash-safe: a worker killed mid-job leaves the row `running` with a stale `claimedAt`; a sweeper
   returns it to `pending`; finished stages are not re-run.
 
-### Deep search (this is where 15 of the 100 points are)
+### Deep search
 - `depth: "deep"` runs `plan_research` first and streams a `plan` event with 3–6 sub-questions,
   each with a one-line reason, **before any retrieval happens**. A plan emitted after the fetches
-  is a rationalisation and scores as one.
+  is a rationalisation, not a plan.
 - Every `trace` step and every `source` on a deep run carries the `subQuestion` index it served.
   A merged source list nobody can trace back to a sub-question is a pile, not research.
 - Merge into ONE citation numbering: dedupe by `url` (or `docId` + locator), number contiguously
@@ -121,12 +120,11 @@ stale — say so rather than following it.
 ### Hygiene
 - Secrets from `.env` only, read server-side. No key, connection string, or token is ever bundled
   into client JavaScript or returned by an endpoint. `.env`, `node_modules/`, `apps/web/.next/`, `runs/`,
-  `reports/` are git-ignored even though the repo is not submitted.
+  `reports/` are git-ignored.
 
 ### Evidence
-- **The submission is the Vercel URL, not the code.** `GET /evals/report.json` on the gateway serves
-  the eval skill's output and the provided UI renders it at `/evals`. Never hand-edit that file, and
-  never write a number into it that a run did not produce.
+- **`GET /evals/report.json`** on the gateway serves the evaluation output, rendered at `/evals`.
+  Never hand-edit that file, and never write a number into it that a run did not produce.
 - Numbers on `/evals` come from a real `node benchmark/bench.mjs` run and a real
   `node quality/check.mjs .` run against the **deployed** gateway. Name the one successful and one
   failing trajectory you read end to end. If you cannot produce a failing one, kill the search key
