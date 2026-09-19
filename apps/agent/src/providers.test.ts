@@ -1,6 +1,6 @@
 import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AnthropicLlm, OpenAiEmbedder, WebSearch, extractJson } from './providers.js';
+import { AnthropicLlm, OpenAiEmbedder, WebSearch, extractJson, withUsageScope } from './providers.js';
 
 /**
  * These cover the JSON control plane — `plan` and `decide` — and exist because of a
@@ -256,4 +256,57 @@ test('a hung embedding call is aborted rather than stalling recall', async () =>
     /abort/i,
     'the embedding call hung with nothing to stop it'
   );
+});
+
+// ---------------------------------------------------------------- per-request usage
+/**
+ * `defaultProviders()` builds one AnthropicLlm for the whole process and its token
+ * counters were instance fields that nothing reset, so `usage()` returned a running
+ * process total. Every requests row recorded that total as if it were the cost of one
+ * answer: the bench read $0.7067 per quick answer against a $0.05 cap, where the real
+ * per-answer delta was $0.0094. Four eval rows failed on an accumulator, not on spend.
+ *
+ * The second test is the one that matters. The obvious fix — snapshot usage() before and
+ * after — is wrong under concurrency, and the bench runs four at a time: one request
+ * would bill another's tokens.
+ */
+const decideCtx = { query: 'q', depth: 'quick' as const, observations: [], toolsUsed: [] };
+
+test('usage reports one request, not a running process total', async () => {
+  stubFetch(reply('{"done":true}'));
+  const llm = new AnthropicLlm('claude-sonnet-5', 'test-key');
+
+  const first = await withUsageScope(async () => {
+    await llm.decide(decideCtx);
+    return llm.usage();
+  });
+  const second = await withUsageScope(async () => {
+    await llm.decide(decideCtx);
+    return llm.usage();
+  });
+
+  assert.ok(first.tokensIn > 0, 'the first request recorded no usage at all');
+  assert.equal(second.tokensIn, first.tokensIn, 'usage accumulated across requests');
+  assert.equal(second.tokensOut, first.tokensOut, 'usage accumulated across requests');
+});
+
+test('concurrent requests do not bill each other for tokens', async () => {
+  stubFetch(reply('{"done":true}'));
+  const llm = new AnthropicLlm('claude-sonnet-5', 'test-key');
+
+  // One request makes a single call, the other three. Interleaved on purpose.
+  const [one, three] = await Promise.all([
+    withUsageScope(async () => {
+      await llm.decide(decideCtx);
+      return llm.usage();
+    }),
+    withUsageScope(async () => {
+      await llm.decide(decideCtx);
+      await llm.decide(decideCtx);
+      await llm.decide(decideCtx);
+      return llm.usage();
+    })
+  ]);
+
+  assert.equal(three.tokensIn, one.tokensIn * 3, 'the busier request did not bill exactly its own calls');
 });

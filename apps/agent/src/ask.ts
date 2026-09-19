@@ -13,7 +13,7 @@
  * Depth is opted into and never drifted into: a quick run may not reach `plan_research`,
  * however much the model would like to.
  */
-import type { Express, Request, Response } from 'express';
+import type { Express, NextFunction, Request, Response } from 'express';
 import type { Db } from 'mongodb';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -36,7 +36,7 @@ import {
 import type { Logger } from 'pino';
 import { sseHeaders, sseSend } from './sse.js';
 import { env } from './env.js';
-import type { Providers, ToolDecision } from './providers.js';
+import { withUsageScope, type Providers, type ToolDecision } from './providers.js';
 import { hybridSearch, recallMemories } from './retrieval.js';
 import { GROUNDING_WINDOW_TOKENS, bestPassage, groundingTokens } from './passage.js';
 
@@ -65,7 +65,21 @@ export function registerAskRoute(
   log: Logger,
   runsDir: string = env.runsDir
 ): void {
-  app.post('/threads/:threadId/ask', async (req: Request, res: Response) => {
+  app.post(
+    '/threads/:threadId/ask',
+    /**
+     * Give this request its own token meter before the handler runs. The llm provider is
+     * one shared instance, so without a scope `usage()` returns the process total and
+     * every row records the whole process's spend as the cost of one answer.
+     *
+     * `next()` is called inside the scope, so the handler it starts — and every await in
+     * it — inherits the async context. A before/after snapshot would be simpler and wrong:
+     * requests overlap, and one would bill another's tokens.
+     */
+    (_req: Request, _res: Response, next: NextFunction) => {
+      void withUsageScope(async () => next());
+    },
+    async (req: Request, res: Response) => {
     const db = await getDb();
     const userId = String(res.locals.userId);
     const threadId = String(req.params.threadId);

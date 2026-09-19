@@ -9,7 +9,35 @@
  * ends the run as `terminated: "error"`. Swallowing it here and returning an empty result
  * is precisely the Live Translate failure.
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { AskTool, PlanEvent } from '@lumina/contract';
+
+/**
+ * Per-request token accounting.
+ *
+ * `defaultProviders()` builds one AnthropicLlm for the whole process, so instance
+ * counters are a running process total — and `ask.ts` recorded that total on every
+ * request row as though it were the cost of one answer. The bench read $0.7067 per quick
+ * answer against a $0.05 cap; the real per-answer delta was $0.0094.
+ *
+ * Snapshotting usage() around a request would be wrong under concurrency — the bench runs
+ * four at a time, and one request would bill another's tokens. The scope travels with the
+ * async context instead, so each request sees exactly its own calls however they
+ * interleave. Outside a scope the process totals are still returned, which is what a
+ * one-off script or a warm-up call wants.
+ */
+type UsageMeter = { tokensIn: number; tokensOut: number };
+const usageScope = new AsyncLocalStorage<UsageMeter>();
+
+/** Whether the caller is inside a request's meter. Lets a test prove the route opens one. */
+export function hasUsageScope(): boolean {
+  return usageScope.getStore() !== undefined;
+}
+
+/** Runs `fn` with its own token meter. Nested scopes are independent by design. */
+export function withUsageScope<T>(fn: () => Promise<T>): Promise<T> {
+  return usageScope.run({ tokensIn: 0, tokensOut: 0 }, fn);
+}
 import { CachedPage, CachedSearch, mongoCacheStore } from './cache.js';
 import { db } from './db.js';
 import { env, secrets } from './env.js';
@@ -152,8 +180,7 @@ export class AnthropicLlm implements LlmProvider {
       content: { type: string; text?: string }[];
       usage?: { input_tokens: number; output_tokens: number };
     };
-    this.tokensIn += body.usage?.input_tokens ?? 0;
-    this.tokensOut += body.usage?.output_tokens ?? 0;
+    this.meter(body.usage?.input_tokens ?? 0, body.usage?.output_tokens ?? 0);
     return body.content.map((c) => c.text ?? '').join('');
   }
 
@@ -285,20 +312,34 @@ export class AnthropicLlm implements LlmProvider {
           message?: { usage?: { input_tokens: number; output_tokens: number } };
         };
         if (ev.type === 'message_start' && ev.message?.usage) {
-          this.tokensIn += ev.message.usage.input_tokens ?? 0;
+          this.meter(ev.message.usage.input_tokens ?? 0, 0);
         }
         if (ev.type === 'message_delta' && ev.usage?.output_tokens) {
-          this.tokensOut += ev.usage.output_tokens;
+          this.meter(0, ev.usage.output_tokens);
         }
         if (ev.type === 'content_block_delta' && ev.delta?.text) yield ev.delta.text;
       }
     }
   }
 
+  /** Charges both the process total and, when inside one, the current request's meter. */
+  private meter(tokensIn: number, tokensOut: number): void {
+    this.tokensIn += tokensIn;
+    this.tokensOut += tokensOut;
+    const scope = usageScope.getStore();
+    if (scope) {
+      scope.tokensIn += tokensIn;
+      scope.tokensOut += tokensOut;
+    }
+  }
+
   usage(): { tokensIn: number; tokensOut: number; costUsd: number } {
+    const scope = usageScope.getStore();
+    const tokensIn = scope ? scope.tokensIn : this.tokensIn;
+    const tokensOut = scope ? scope.tokensOut : this.tokensOut;
     const price = PRICING[this.model] ?? { in: 3, out: 15 };
-    const costUsd = (this.tokensIn / 1e6) * price.in + (this.tokensOut / 1e6) * price.out;
-    return { tokensIn: this.tokensIn, tokensOut: this.tokensOut, costUsd };
+    const costUsd = (tokensIn / 1e6) * price.in + (tokensOut / 1e6) * price.out;
+    return { tokensIn, tokensOut, costUsd };
   }
 }
 

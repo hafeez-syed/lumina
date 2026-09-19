@@ -8,7 +8,7 @@ import { MongoClient, type Db } from 'mongodb';
 import pino from 'pino';
 import { AskStreamEvent, unresolvedCitations, type Source } from '@lumina/contract';
 import { createApp } from './app.js';
-import type { Providers, ToolDecision } from './providers.js';
+import { hasUsageScope, type Providers, type ToolDecision } from './providers.js';
 import { env } from './env.js';
 
 /**
@@ -40,6 +40,8 @@ const PAGE_TEXT =
   'PAGE-BODY Atlas Vector Search uses approximate nearest neighbour indexes to trade a ' +
   'little recall for a great deal of speed, which is the whole point of an approximate index.';
 let fetchFails = false;
+/** Set when the handler asks the fake for usage, recording whether a scope was open. */
+let sawUsageScope: boolean | null = null;
 /**
  * A JS-rendered page Readability cannot read: what comes back is navigation chrome, not
  * content. The bench caught exactly this — a YouTube watch page cited with the snippet
@@ -71,7 +73,10 @@ const providers: Providers = {
       if (llmThrows) throw new Error('provider exploded');
       for (const part of answerText.match(/.{1,8}/g) ?? []) yield part;
     },
-    usage: () => ({ tokensIn: 100, tokensOut: 40, costUsd: 0.0012 })
+    usage: () => {
+      sawUsageScope = hasUsageScope();
+      return { tokensIn: 100, tokensOut: 40, costUsd: 0.0012 };
+    }
   },
   search: {
     name: 'fake-search',
@@ -543,4 +548,23 @@ test('one tool is not called past the consecutive bound', async () => {
   }
 
   assert.ok(worst <= 4, `"${who}" ran ${worst}x consecutively (A3 caps this at 4)`);
+});
+
+test('the ask route opens a usage scope for the request', async () => {
+  /**
+   * The provider tests prove the meter itself, with the real AnthropicLlm and real
+   * concurrency. What they cannot prove is that this route opens a scope at all — and
+   * that was the whole bug: usage() was right about the process, and the process was the
+   * wrong question.
+   *
+   * Asserting on the recorded token count would prove nothing here, because the fake
+   * provider returns a constant: the numbers would match with or without the fix. So this
+   * asks the only question the fake can answer honestly — was a scope active when the
+   * handler asked for usage?
+   */
+  sawUsageScope = null;
+  script = [];
+  await ask(await newThread(), { query: 'q' });
+
+  assert.equal(sawUsageScope, true, 'the handler read usage outside any request scope');
 });
