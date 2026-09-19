@@ -15,7 +15,7 @@
 
   --paper: #fbfbfa;
   --sheet: #ffffff;
-  --sunk: #f4f5f6;
+  --sunk: #4272a2;
 
   --ink: #16191d;
   --ink-soft: #464c54;
@@ -44,7 +44,7 @@
   :root {
     --paper: #0f1115;
     --sheet: #15181d;
-    --sunk: #1b1f25;
+    --sunk: #113263;
 
     --ink: #e8eaed;
     --ink-soft: #a9b1bb;
