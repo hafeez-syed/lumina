@@ -1,0 +1,60 @@
+# LUMINA gateway — PUBLIC. This is the only service the browser reaches, and the only one
+# with a public address. No provider key is read in this process.
+#
+# Deploy from the REPOSITORY ROOT:
+#   fly deploy -c apps/gateway/fly.toml
+
+app = "lumina-fde-gateway"
+primary_region = "lhr"           # keep this equal to the agent's region
+
+[build]
+  dockerfile = "Dockerfile"
+  # Build context is the repo root — pnpm workspace, see the Dockerfile header.
+
+[env]
+  PORT_GATEWAY = "8787"
+  NODE_ENV = "production"
+  LOG_LEVEL = "info"
+  # Private network address of the agent. `.internal` resolves to the agent app's
+  # machines over IPv6 and never leaves Fly.
+  AGENT_URL = "http://lumina-fde-agent.internal:8000"
+  HOST = "::"
+  # Set CORS_ORIGINS to your Vercel domain as a secret or with `fly secrets set`, e.g.
+  # https://lumina.vercel.app — a wildcard here would let any page spend your budget.
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+
+  # Both of these are about SSE, not cost. An answer streams for seconds and a deep
+  # search for minutes: stopping a machine mid-stream kills the response, and a cold
+  # start lands entirely inside time-to-first-token, which is the one SLA a user feels.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    # Connection-based, because an SSE stream holds a connection open while doing
+    # almost nothing. Request-based limits misread that as load.
+    type = "connections"
+    soft_limit = 50
+    hard_limit = 100
+
+  [[http_service.checks]]
+    path = "/health"
+    method = "get"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"               # a proxy: it validates, limits and forwards
+
+# Before the first deploy:
+#
+#   fly secrets set -c apps/gateway/fly.toml \
+#     CORS_ORIGINS="https://<your-app>.vercel.app"
+#
+# Optional: RATE_LIMIT_PER_MINUTE (default 30), WEB_DIST if you would rather serve a
+# static UI export from here than from Vercel.

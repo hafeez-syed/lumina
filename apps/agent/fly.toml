@@ -1,0 +1,69 @@
+# LUMINA agent service — PRIVATE. Nothing here exposes a public port, and it must stay
+# that way: this process holds every provider key and enforces DEEP_DAILY_CAP. A spend cap
+# you can bypass by calling the service directly is not a cap.
+#
+# Deploy from the REPOSITORY ROOT:
+#   fly deploy -c apps/agent/fly.toml
+#
+# Do NOT run `fly ips allocate-v4` or `allocate-v6` on this app. The gateway reaches it over
+# Fly's private network at http://<app>.internal:8000 — no public IP is involved, and
+# allocating one is what turns a private service into an open one.
+
+app = "lumina-fde-agent"
+primary_region = "lhr"           # put this in the same region as the gateway
+
+[build]
+  dockerfile = "Dockerfile"
+  # The build context is the repo root: this is a pnpm workspace and the lockfile,
+  # the catalog and packages/contract all live above apps/agent.
+
+[env]
+  PORT_AGENT = "8000"
+  NODE_ENV = "production"
+  LOG_LEVEL = "info"
+  RUNS_DIR = "/repo/runs"
+  # Bind on IPv6 too. Fly's .internal DNS returns AAAA records only, so an IPv4-only
+  # bind is unreachable from the gateway and looks like a networking fault.
+  HOST = "::"
+
+# Two process groups from one image. The worker must not run on the thread serving
+# answers: parsing a 60-page PDF there shows up as search p95 collapsing, not as a
+# crash. Scale them independently with `fly scale count app=1 worker=1`.
+[processes]
+  app = "node dist/index.js"
+  worker = "node dist/worker-main.js"
+
+# No [http_service] and no [[services]] on purpose — see the header. Health is checked at
+# the machine level instead, which needs no public listener.
+[[vm]]
+  processes = ["app"]
+  size = "shared-cpu-1x"
+  memory = "1gb"
+
+# The worker loads pdfjs and embeds whole documents; give it more room than the API.
+[[vm]]
+  processes = ["worker"]
+  size = "shared-cpu-1x"
+  memory = "2gb"
+
+[checks.health]
+  type = "http"
+  port = 8000
+  method = "get"
+  path = "/health"
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "20s"
+  processes = ["app"]
+
+# Secrets — set these before the first deploy, never in [env]:
+#
+#   fly secrets set -c apps/agent/fly.toml \
+#     MONGODB_URI="mongodb+srv://..." \
+#     ANTHROPIC_API_KEY="sk-ant-..." \
+#     OPENAI_API_KEY="sk-..." \
+#     SERPAPI_API_KEY="..."            # or TAVILY_API_KEY, matching SEARCH_PROVIDER
+#
+# Optional overrides, all with code defaults: MONGODB_DB, LLM_PROVIDER, LLM_MODEL,
+# EMBEDDING_MODEL, SEARCH_PROVIDER, VECTOR_BACKEND, DEEP_DAILY_CAP, MAX_TOOL_CALLS,
+# MAX_WALL_CLOCK_SEC, MAX_TOOL_CALLS_DEEP, MAX_WALL_CLOCK_SEC_DEEP.

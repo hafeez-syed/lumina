@@ -1,0 +1,40 @@
+# Secrets. Provider keys reach a container through `fly secrets`, never through a layer:
+# anything copied in is recoverable from the image by anyone who can pull it.
+.env
+.env.*
+!.env.example
+
+# Installed per-image for the target platform; copying the host's is both large and wrong.
+node_modules
+**/node_modules
+
+# Build output and caches — rebuilt inside the image.
+.turbo
+**/.turbo
+dist
+**/dist
+.next
+**/.next
+out
+**/out
+
+# Run artifacts. The authoritative copies live in Mongo.
+runs
+reports
+
+# Local-only reference material.
+.course
+
+# Repository and editor noise.
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+**/*.log
+
+# Docs and fixtures the services do not read at runtime.
+*.md
+!README.md
+eval/gold
+benchmark
