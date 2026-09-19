@@ -5,7 +5,8 @@
 #   fly deploy -c apps/gateway/fly.toml
 
 app = "lumina-fde-gateway"
-primary_region = "lhr"           # keep this equal to the agent's region
+# Co-located with the Atlas cluster and the agent. See apps/agent/fly.toml.
+primary_region = "syd"
 
 [build]
   dockerfile = "Dockerfile"

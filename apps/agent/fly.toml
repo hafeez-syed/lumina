@@ -10,7 +10,10 @@
 # allocating one is what turns a private service into an open one.
 
 app = "lumina-fde-agent"
-primary_region = "lhr"           # put this in the same region as the gateway
+# Co-located with the Atlas cluster. A Mongo ping from lhr took ~280ms against
+# ~17ms from here, and the ask path makes several sequential Mongo calls before the
+# first token, so the region gap was ~1.3s of pure geography inside TTFT.
+primary_region = "syd"
 
 [build]
   dockerfile = "Dockerfile"
