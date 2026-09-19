@@ -15,6 +15,13 @@ primary_region = "lhr"           # keep this equal to the agent's region
   PORT_GATEWAY = "8787"
   NODE_ENV = "production"
   LOG_LEVEL = "info"
+  # Where this process finds the evaluation report it serves at GET /evals/report.json.
+  # The default resolves to /repo/reports/report.json, which .dockerignore excludes
+  # ("run artifacts"), so the route could only ever 404 in a deployed image. The file is
+  # copied to apps/gateway/report.json before `fly deploy` and ships via
+  # `COPY apps/gateway apps/gateway`. It stays untracked: a generated artifact does not
+  # belong in git, and the build context is not git.
+  EVALS_REPORT = "/repo/apps/gateway/report.json"
   # Private network address of the agent. `.internal` resolves to the agent app's
   # machines over IPv6 and never leaves Fly.
   AGENT_URL = "http://lumina-fde-agent.internal:8000"

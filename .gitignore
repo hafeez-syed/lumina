@@ -46,3 +46,6 @@ yarn-error.log*
 # Run logs and generated reports — artifacts of a run, never committed (AGENTS.md hygiene).
 runs/
 reports/
+
+# The eval report is copied here so it ships in the gateway image; still a run artifact.
+apps/gateway/report.json
