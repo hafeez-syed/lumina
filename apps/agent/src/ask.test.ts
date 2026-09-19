@@ -40,6 +40,8 @@ const PAGE_TEXT =
   'PAGE-BODY Atlas Vector Search uses approximate nearest neighbour indexes to trade a ' +
   'little recall for a great deal of speed, which is the whole point of an approximate index.';
 let fetchFails = false;
+/** Lets a test put measurable time inside retrieval, so a timing stamp is not just 0. */
+let searchDelayMs = 0;
 
 const providers: Providers = {
   llm: {
@@ -66,6 +68,7 @@ const providers: Providers = {
   search: {
     name: 'fake-search',
     async search() {
+      if (searchDelayMs) await new Promise((r) => setTimeout(r, searchDelayMs));
       return { hits, cached: false };
     }
   },
@@ -104,6 +107,7 @@ beforeEach(async () => {
   answerText = 'Vector search is approximate [1].';
   llmThrows = false;
   fetchFails = false;
+  searchDelayMs = 0;
 });
 
 after(async () => {
@@ -366,6 +370,34 @@ test('the request row records what /stats needs', async () => {
   assert.equal(typeof row?.ttftMs, 'number');
   assert.equal(typeof row?.searchCached, 'boolean');
   assert.equal(row?.depth, 'quick');
+});
+
+/**
+ * `ttftMs` alone cannot say whether a slow first token went on retrieval or on waiting for
+ * the model after retrieval finished. `sourcesMs` is the boundary between the two.
+ *
+ * The stubs normally finish retrieval inside a millisecond, which would make every stamp
+ * read 0 and let this test pass wherever the stamp was placed — including after the stream
+ * loop, which is precisely the bug worth catching. So retrieval is given a real 25ms and
+ * the assertion is that the stamp lands on the retrieval side of it.
+ */
+const SEARCH_DELAY_MS = 25;
+
+test('the request row splits ttft into retrieval and everything after it', async () => {
+  searchDelayMs = SEARCH_DELAY_MS;
+  await ask(await newThread(), { query: 'q' });
+
+  const row = await db.collection('requests').findOne({ userId: 'alice' });
+  assert.ok(row, 'expected a request row');
+  assert.equal(typeof row?.sourcesMs, 'number');
+  assert.ok(
+    (row?.sourcesMs as number) >= SEARCH_DELAY_MS,
+    `sourcesMs ${row?.sourcesMs} is below the ${SEARCH_DELAY_MS}ms spent searching, so it was not stamped after retrieval`
+  );
+  assert.ok(
+    (row?.sourcesMs as number) <= (row?.ttftMs as number),
+    'sources are emitted before the first token, so sourcesMs cannot exceed ttftMs'
+  );
 });
 
 test('a saved memory is stored with an embedding, not an empty vector', async () => {

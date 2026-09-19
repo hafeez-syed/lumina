@@ -103,18 +103,36 @@ Cite with [n] matching the source numbers. Never cite a number that is not in th
 If the sources do not answer the question, say so plainly and cite nothing.
 Be direct and specific. No preamble.`;
 
+/**
+ * The control plane is a <=1024-token JSON reply, so 20s is far beyond any healthy call
+ * and only catches a genuine hang. It is deliberately not tighter: `decide` throwing
+ * propagates to the ask loop's outer catch, which loses the whole answer, so a bound
+ * tight enough to trip a merely slow call would trade latency for error rate — and the
+ * error-rate SLA is one of the few currently passing.
+ *
+ * A hung call with no bound was never answered either, so this cannot make a run worse
+ * than it already was. Letting a decide timeout break the loop and answer from what is
+ * already retrieved would be strictly better still, but that is an ask-loop change.
+ */
+const LLM_TIMEOUT_MS = 20_000;
+
 export class AnthropicLlm implements LlmProvider {
   readonly model: string;
   private tokensIn = 0;
   private tokensOut = 0;
 
-  constructor(model = env.llmModel, private readonly apiKey = secrets.anthropic) {
+  constructor(
+    model = env.llmModel,
+    private readonly apiKey = secrets.anthropic,
+    private readonly timeoutMs = LLM_TIMEOUT_MS
+  ) {
     this.model = model;
   }
 
   private async call(system: string, user: string, maxTokens = 1024): Promise<string> {
     if (!this.apiKey) throw new Error('ANTHROPIC_API_KEY is not set');
     const res = await fetch('https://api.anthropic.com/v1/messages', {
+      signal: AbortSignal.timeout(this.timeoutMs),
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -207,8 +225,22 @@ export class AnthropicLlm implements LlmProvider {
       ? `\n\nWhat you remember about this user:\n${ctx.memories.join('\n')}`
       : '';
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    /**
+     * Headers only, not the whole request. An answer legitimately streams for many
+     * seconds, so AbortSignal.timeout here would truncate healthy answers; the timer is
+     * cleared the moment the response headers land and the body is then free to take as
+     * long as it takes. Same distinction apps/gateway/src/proxy.ts makes.
+     */
+    const controller = new AbortController();
+    const headersTimer = setTimeout(
+      () => controller.abort(new Error('anthropic stream: aborted waiting for headers')),
+      this.timeoutMs
+    );
+    let res: Response;
+    try {
+      res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
+      signal: controller.signal,
       headers: {
         'content-type': 'application/json',
         'x-api-key': this.apiKey,
@@ -225,6 +257,9 @@ export class AnthropicLlm implements LlmProvider {
         ]
       })
     });
+    } finally {
+      clearTimeout(headersTimer);
+    }
     if (!res.ok || !res.body) {
       throw new Error(`anthropic stream ${res.status}: ${(await res.text()).slice(0, 300)}`);
     }
@@ -312,9 +347,20 @@ export function extractJson(raw: string): string {
 
 // ---------------------------------------------------------------- search
 
+/**
+ * Above the measured p95 (11431ms over 228 deployed searches), below the observed max
+ * (66830ms). Chosen that way on purpose: a bound tight enough to trim legitimate slow
+ * searches would drop sources and push grounding down, which is the one thing a latency
+ * fix here may not do. This ends runaway calls, it does not hurry up working ones.
+ */
+const SEARCH_TIMEOUT_MS = 15_000;
+
 export class WebSearch implements SearchProvider {
   readonly name: string;
-  constructor(private readonly provider = env.searchProvider) {
+  constructor(
+    private readonly provider = env.searchProvider,
+    private readonly timeoutMs = SEARCH_TIMEOUT_MS
+  ) {
     this.name = provider;
   }
 
@@ -330,7 +376,8 @@ export class WebSearch implements SearchProvider {
     const res = await fetch('https://api.tavily.com/search', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${secrets.tavily}` },
-      body: JSON.stringify({ query, max_results: 5 })
+      body: JSON.stringify({ query, max_results: 5 }),
+      signal: AbortSignal.timeout(this.timeoutMs)
     });
     if (!res.ok) throw new Error(`tavily ${res.status}: ${(await res.text()).slice(0, 200)}`);
     const body = (await res.json()) as { results?: { title: string; url: string; content: string }[] };
@@ -344,7 +391,7 @@ export class WebSearch implements SearchProvider {
     url.searchParams.set('api_key', secrets.serpapi);
     url.searchParams.set('num', '5');
 
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(this.timeoutMs) });
     if (!res.ok) throw new Error(`serpapi ${res.status}: ${(await res.text()).slice(0, 200)}`);
     const body = (await res.json()) as {
       organic_results?: { title: string; link: string; snippet?: string }[];
@@ -387,7 +434,12 @@ export class ReadablePage implements PageFetcher {
 
 export class OpenAiEmbedder implements Embedder {
   readonly model: string;
-  constructor(model = env.embeddingModel, private readonly apiKey = secrets.openai) {
+  constructor(
+    model = env.embeddingModel,
+    private readonly apiKey = secrets.openai,
+    /** Embedding sits on the pre-first-token path via recallMemory, so it needs a bound too. */
+    private readonly timeoutMs = LLM_TIMEOUT_MS
+  ) {
     this.model = model;
   }
 
@@ -396,6 +448,7 @@ export class OpenAiEmbedder implements Embedder {
     if (texts.length === 0) return [];
 
     const res = await fetch('https://api.openai.com/v1/embeddings', {
+      signal: AbortSignal.timeout(this.timeoutMs),
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${this.apiKey}` },
       body: JSON.stringify({ model: this.model, input: texts })

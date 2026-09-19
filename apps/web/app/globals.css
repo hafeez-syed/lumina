@@ -97,7 +97,7 @@ code,
 kbd {
   font-family: var(--mono);
   font-size: 0.85em;
-  background: var(--sunk);
+
   border: 1px solid var(--rule);
   border-radius: 2px;
   padding: 0.05em 0.3em;
@@ -164,7 +164,6 @@ kbd {
   width: 10ch;
   padding: 0.25rem 0.4rem;
   color: var(--ink);
-  background: var(--sunk);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
 }
@@ -530,7 +529,9 @@ input[type="file"] {
 }
 .source.hl {
   background: var(--index-wash);
-  box-shadow: -0.5rem 0 0 var(--index-wash), 0.5rem 0 0 var(--index-wash);
+  box-shadow:
+    -0.5rem 0 0 var(--index-wash),
+    0.5rem 0 0 var(--index-wash);
 }
 
 .grow {

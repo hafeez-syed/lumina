@@ -134,6 +134,13 @@ export function registerAskRoute(
     let plan: PlanEvent | undefined;
     let answer = '';
     let ttftMs = 0;
+    /**
+     * When `sources` went out, from the same origin as `ttftMs`. The pair splits
+     * time-to-first-token into retrieval (search, the page fetches, the decide loop) and
+     * what follows it (history, memory recall, the model's first token). A ttft that
+     * misses its target says only that it missed; these two say which half to fix.
+     */
+    let sourcesMs = 0;
 
     sseHeaders(res);
 
@@ -388,6 +395,7 @@ export function registerAskRoute(
       if (trace.length >= maxToolCalls) terminated = 'cap';
 
       // Sources before the first token, always.
+      sourcesMs = Date.now() - startedAt;
       sseSend(res, 'sources', sources);
 
       const history = await db
@@ -429,6 +437,7 @@ export function registerAskRoute(
         toolRuns,
         startedAt,
         ttftMs,
+        sourcesMs,
         searchCached: sawSearch ? searchCached : false,
         usage: providers.llm.usage(),
         model: providers.llm.model,
@@ -472,6 +481,7 @@ export function registerAskRoute(
       toolRuns,
       startedAt,
       ttftMs,
+      sourcesMs,
       searchCached: done.searchCached,
       usage,
       model: providers.llm.model,
@@ -500,6 +510,7 @@ type PersistArgs = {
   toolRuns: ToolRun[];
   startedAt: number;
   ttftMs: number;
+  sourcesMs: number;
   searchCached: boolean;
   usage: { tokensIn: number; tokensOut: number; costUsd: number };
   model: string;
@@ -559,6 +570,7 @@ async function persist(a: PersistArgs): Promise<void> {
     // Not in RequestDoc, but /stats needs them and the request log is the one place
     // that already has a row per answer.
     ttftMs: a.ttftMs,
+    sourcesMs: a.sourcesMs,
     searchCached: a.searchCached,
     createdAt: now
   } as never);
