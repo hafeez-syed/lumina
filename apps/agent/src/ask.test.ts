@@ -483,3 +483,31 @@ test('a page rejected as too thin is a failed step with a reason, not a silent d
   assert.ok(step, 'the rejected fetch left no failed trace step');
   assert.ok(step.error?.trim(), 'ok:false must carry an error (A1)');
 });
+
+test('a call that already failed with the same input is not retried until the cap', async () => {
+  /**
+   * The deployed failure this comes from (req_21a83d72-efd): in docs mode
+   * search_documents returns chunks with no url, the model called fetch_page with an
+   * empty one, got the identical error, and called it again — five times, until the
+   * tool cap. 28 seconds and 205k tokens on an answer that never landed, and a run
+   * that terminates 'cap', which rule A2 counts as a failure however good the answer.
+   *
+   * Grinding through the budget on a call that cannot work is the bug. Answering with
+   * what has already been retrieved is the fix.
+   */
+  script = Array.from({ length: env.maxToolCalls + 4 }, () => ({
+    tool: 'fetch_page' as const,
+    input: { url: '' },
+    reason: 'read the document'
+  }));
+
+  const { frames } = await ask(await newThread(), { query: 'q' });
+  const done = frames.at(-1)?.data as { terminated: string };
+  const failed = frames
+    .filter((f) => f.event === 'trace')
+    .map((f) => f.data as { tool: string; ok: boolean })
+    .filter((t) => t.tool === 'fetch_page' && !t.ok);
+
+  assert.equal(done.terminated, 'done', 'the loop ground to the cap on a call it had already failed');
+  assert.ok(failed.length <= 1, `the same failing call was repeated ${failed.length} times`);
+});

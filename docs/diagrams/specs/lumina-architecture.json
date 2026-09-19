@@ -1,0 +1,303 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "LUMINA System Architecture",
+    "output": "lumina-architecture.html",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1240,
+      620
+    ],
+    "views": [
+      {
+        "id": "answer-path",
+        "label": "Answer path",
+        "focus": [
+          "browser",
+          "web",
+          "gateway",
+          "agentapp",
+          "providers"
+        ],
+        "note": "The only path a browser can take: one origin, then one public service, then a private one."
+      },
+      {
+        "id": "key-isolation",
+        "label": "Key isolation",
+        "focus": [
+          "gateway",
+          "agentapp",
+          "providers"
+        ],
+        "note": "The agent holds every provider key and has no public address, so the spend cap cannot be bypassed."
+      },
+      {
+        "id": "ingest",
+        "label": "Ingest and state",
+        "focus": [
+          "worker",
+          "jobs",
+          "atlas",
+          "indexes"
+        ],
+        "note": "Indexing runs on a separate process group, never on the thread serving an answer."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "browser",
+      "type": "external",
+      "label": "Browser",
+      "sublabel": "one header: X-User-Id",
+      "pos": [
+        40,
+        300
+      ],
+      "size": [
+        155,
+        72
+      ]
+    },
+    {
+      "id": "web",
+      "type": "frontend",
+      "label": "apps/web",
+      "sublabel": "Next.js on Vercel",
+      "tag": "/api/[...path] proxy",
+      "pos": [
+        255,
+        300
+      ],
+      "size": [
+        170,
+        72
+      ]
+    },
+    {
+      "id": "gateway",
+      "type": "backend",
+      "label": "apps/gateway",
+      "sublabel": "Fly, public :8787",
+      "tag": "no provider key",
+      "pos": [
+        475,
+        300
+      ],
+      "size": [
+        170,
+        72
+      ]
+    },
+    {
+      "id": "agentapp",
+      "type": "backend",
+      "label": "apps/agent — app",
+      "sublabel": "Fly, private :8000",
+      "tag": "holds every key",
+      "pos": [
+        695,
+        300
+      ],
+      "size": [
+        180,
+        72
+      ]
+    },
+    {
+      "id": "providers",
+      "type": "external",
+      "label": "Providers",
+      "sublabel": "Anthropic, SerpAPI",
+      "pos": [
+        695,
+        105
+      ],
+      "size": [
+        180,
+        66
+      ]
+    },
+    {
+      "id": "worker",
+      "type": "backend",
+      "label": "apps/agent — worker",
+      "sublabel": "own Fly process group",
+      "pos": [
+        695,
+        500
+      ],
+      "size": [
+        180,
+        72
+      ]
+    },
+    {
+      "id": "indexes",
+      "type": "database",
+      "label": "Atlas indexes",
+      "sublabel": "vector + text search",
+      "tag": "M0 ceiling: 3",
+      "pos": [
+        955,
+        105
+      ],
+      "size": [
+        195,
+        72
+      ]
+    },
+    {
+      "id": "atlas",
+      "type": "database",
+      "label": "MongoDB Atlas",
+      "sublabel": "10 collections + GridFS",
+      "pos": [
+        955,
+        300
+      ],
+      "size": [
+        195,
+        72
+      ]
+    },
+    {
+      "id": "jobs",
+      "type": "messagebus",
+      "label": "jobs",
+      "sublabel": "queue collection",
+      "pos": [
+        955,
+        500
+      ],
+      "size": [
+        180,
+        72
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Vercel",
+      "wraps": [
+        "web"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Fly — lhr",
+      "wraps": [
+        "gateway",
+        "agentapp",
+        "worker"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "MongoDB Atlas",
+      "wraps": [
+        "indexes",
+        "atlas",
+        "jobs"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "keys + DEEP_DAILY_CAP",
+      "wraps": [
+        "agentapp",
+        "worker"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "browser-web",
+      "from": "browser",
+      "to": "web",
+      "label": "same-origin",
+      "variant": "emphasis",
+      "labelAt": [
+        225,
+        386
+      ]
+    },
+    {
+      "id": "web-gateway",
+      "from": "web",
+      "to": "gateway",
+      "label": "server-side",
+      "variant": "emphasis",
+      "labelAt": [
+        450,
+        386
+      ]
+    },
+    {
+      "id": "gateway-agent",
+      "from": "gateway",
+      "to": "agentapp",
+      "label": "private, IPv6",
+      "variant": "emphasis",
+      "labelAt": [
+        670,
+        386
+      ]
+    },
+    {
+      "id": "agent-providers",
+      "from": "agentapp",
+      "to": "providers",
+      "label": "bounded calls",
+      "variant": "security",
+      "labelDy": -30
+    },
+    {
+      "id": "agent-atlas",
+      "from": "agentapp",
+      "to": "atlas",
+      "label": "read and write"
+    },
+    {
+      "id": "worker-jobs",
+      "from": "worker",
+      "to": "jobs",
+      "label": "atomic claim",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Reachability",
+      "items": [
+        "The browser reaches exactly one origin",
+        "apps/gateway is the only public address",
+        "lumina-fde-agent.internal resolves AAAA-only, so the agent binds HOST = ::",
+        "GATEWAY_URL is read server-side and never enters the client bundle"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Why the agent is private",
+      "items": [
+        "It is the only process holding a provider key",
+        "It is the only one enforcing DEEP_DAILY_CAP",
+        "A cap you can bypass by calling the service directly is not a cap",
+        "Outbound calls are bounded: search 15s, control-plane LLM 20s, page fetch 12s"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "State and indexes",
+      "items": [
+        "Authoritative: threads, messages, memories, spaces, documents, chunks",
+        "Disposable: searchCache (TTL tier 2) and the in-process LRUs",
+        "Indexes: memories_vector, chunks_vector, chunks_text — the whole M0 budget",
+        "Upload enqueues a job and returns 202; the worker indexes it afterwards"
+      ]
+    }
+  ]
+}

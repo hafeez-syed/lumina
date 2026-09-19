@@ -1,0 +1,183 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "LUMINA Document Ingest Lifecycle",
+    "output": "lumina-ingest-lifecycle.html",
+    "viewBox": [
+      1030,
+      566
+    ],
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "main",
+        "label": "Main path",
+        "focus": [
+          "accepted",
+          "pending",
+          "indexing",
+          "probe",
+          "indexed"
+        ],
+        "note": "Upload returns 202 immediately; everything after it happens on the worker."
+      },
+      {
+        "id": "window",
+        "label": "The unsearchable window",
+        "focus": [
+          "accepted",
+          "pending",
+          "indexing"
+        ],
+        "note": "A document exists and is visible while it is not yet retrievable."
+      },
+      {
+        "id": "recovery",
+        "label": "Failure and recovery",
+        "focus": [
+          "indexing",
+          "abandoned",
+          "failed",
+          "pending"
+        ],
+        "note": "A dead worker costs a retry; a bad embedding is recorded, never left pending."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "Document lifecycle"
+    },
+    {
+      "id": "recovery",
+      "label": "Failure and recovery"
+    }
+  ],
+  "states": [
+    {
+      "id": "accepted",
+      "type": "start",
+      "label": "202 Accepted",
+      "sublabel": "row written, job queued",
+      "lane": "main",
+      "col": 0,
+      "step": "01",
+      "tag": "entry"
+    },
+    {
+      "id": "pending",
+      "type": "waiting",
+      "label": "Pending",
+      "sublabel": "visible, not searchable",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "tag": "window"
+    },
+    {
+      "id": "indexing",
+      "type": "active",
+      "label": "Indexing",
+      "sublabel": "chunk and embed",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "tag": "worker"
+    },
+    {
+      "id": "probe",
+      "type": "decision",
+      "label": "Read-your-write",
+      "sublabel": "chunks retrievable?",
+      "lane": "main",
+      "col": 3,
+      "step": "04",
+      "tag": "gate"
+    },
+    {
+      "id": "indexed",
+      "type": "success",
+      "label": "Indexed",
+      "sublabel": "citable in answers",
+      "lane": "main",
+      "col": 4,
+      "step": "05",
+      "tag": "done"
+    },
+    {
+      "id": "abandoned",
+      "type": "failure",
+      "label": "Abandoned",
+      "sublabel": "worker died mid-flight",
+      "lane": "recovery",
+      "col": 0,
+      "tag": "retryable"
+    },
+    {
+      "id": "failed",
+      "type": "failure",
+      "label": "Failed",
+      "sublabel": "recorded with a reason",
+      "lane": "recovery",
+      "col": 1,
+      "tag": "terminal"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "claim-goes-stale",
+      "from": "indexing",
+      "to": "abandoned",
+      "label": "claim goes stale",
+      "variant": "security",
+      "route": "drop"
+    },
+    {
+      "id": "sweeper-requeues",
+      "from": "abandoned",
+      "to": "pending",
+      "label": "sweeper requeues",
+      "variant": "emphasis",
+      "labelDx": -80
+    },
+    {
+      "id": "probe-failed",
+      "from": "probe",
+      "to": "failed",
+      "label": "not retrievable",
+      "variant": "security",
+      "route": "drop"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "The window is deliberate",
+      "items": [
+        "202 returns before any embedding happens",
+        "A sync upload would hold the connection open",
+        "In the window, answers just cannot cite it"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Why a claim is atomic",
+      "items": [
+        "One findOneAndUpdate claims and stamps it",
+        "Read-then-write would embed it twice",
+        "Indexing never runs on the answering thread"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Nothing stays pending",
+      "items": [
+        "A dead worker's row is swept back to pending",
+        "A failed embedding is recorded with a reason",
+        "Done is set only after a read-your-write probe"
+      ]
+    }
+  ]
+}

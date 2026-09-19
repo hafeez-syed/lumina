@@ -1,0 +1,237 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "LUMINA Ask — SSE Stream Order",
+    "output": "lumina-ask-sequence.html",
+    "viewBox": [
+      1060,
+      538
+    ],
+    "column_fit": "spread",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "request",
+        "label": "Request path",
+        "focus": [
+          "browser",
+          "web",
+          "gateway",
+          "agent"
+        ],
+        "note": "Three hops before any work starts, and only the first is public."
+      },
+      {
+        "id": "retrieval",
+        "label": "Retrieval",
+        "focus": [
+          "agent",
+          "providers"
+        ],
+        "note": "Everything here happens before the first token, which is what puts a floor under TTFT."
+      },
+      {
+        "id": "stream",
+        "label": "Stream order",
+        "focus": [
+          "agent",
+          "browser"
+        ],
+        "note": "sources is always emitted before the first token, then done closes the stream."
+      }
+    ]
+  },
+  "participants": [
+    {
+      "id": "browser",
+      "type": "external",
+      "label": "Browser",
+      "sublabel": "X-User-Id"
+    },
+    {
+      "id": "web",
+      "type": "frontend",
+      "label": "apps/web",
+      "sublabel": "/api/[...path]"
+    },
+    {
+      "id": "gateway",
+      "type": "backend",
+      "label": "apps/gateway",
+      "sublabel": "public :8787"
+    },
+    {
+      "id": "agent",
+      "type": "backend",
+      "label": "apps/agent",
+      "sublabel": "private :8000"
+    },
+    {
+      "id": "providers",
+      "type": "external",
+      "label": "Providers",
+      "sublabel": "search + LLM"
+    }
+  ],
+  "segments": [
+    {
+      "from": 160,
+      "to": 267,
+      "label": "Request path"
+    },
+    {
+      "from": 269,
+      "to": 379,
+      "label": "Retrieval — before any token"
+    },
+    {
+      "from": 381,
+      "to": 463,
+      "label": "Stream"
+    }
+  ],
+  "messages": [
+    {
+      "id": "ask",
+      "from": "browser",
+      "to": "web",
+      "y": 170,
+      "label": "POST /api/threads/:id/ask",
+      "variant": "emphasis"
+    },
+    {
+      "id": "forward",
+      "from": "web",
+      "to": "gateway",
+      "y": 198,
+      "label": "server-side forward",
+      "variant": "emphasis"
+    },
+    {
+      "id": "proxy",
+      "from": "gateway",
+      "to": "agent",
+      "y": 226,
+      "label": "private network, IPv6",
+      "variant": "emphasis"
+    },
+    {
+      "id": "plan",
+      "from": "agent",
+      "to": "browser",
+      "y": 254,
+      "label": "SSE plan (deep only)",
+      "variant": "dashed",
+      "note": "Stream frames traverse apps/gateway and apps/web unbuffered; drawn direct for legibility."
+    },
+    {
+      "id": "search",
+      "from": "agent",
+      "to": "providers",
+      "y": 282,
+      "label": "web_search"
+    },
+    {
+      "id": "trace",
+      "from": "agent",
+      "to": "browser",
+      "y": 310,
+      "label": "SSE trace",
+      "variant": "dashed"
+    },
+    {
+      "id": "fetch",
+      "from": "agent",
+      "to": "providers",
+      "y": 338,
+      "label": "fetch_page x3, parallel"
+    },
+    {
+      "id": "decide",
+      "from": "agent",
+      "to": "providers",
+      "y": 366,
+      "label": "decide loop, one LLM call per step"
+    },
+    {
+      "id": "sources",
+      "from": "agent",
+      "to": "browser",
+      "y": 394,
+      "label": "SSE sources",
+      "variant": "emphasis"
+    },
+    {
+      "id": "token",
+      "from": "agent",
+      "to": "browser",
+      "y": 422,
+      "label": "SSE token, repeatedly",
+      "variant": "return"
+    },
+    {
+      "id": "done",
+      "from": "agent",
+      "to": "browser",
+      "y": 450,
+      "label": "SSE done",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "web",
+      "from": 165,
+      "to": 455,
+      "type": "frontend"
+    },
+    {
+      "participant": "gateway",
+      "from": 193,
+      "to": 455,
+      "type": "backend"
+    },
+    {
+      "participant": "agent",
+      "from": 221,
+      "to": 453,
+      "type": "backend"
+    },
+    {
+      "participant": "providers",
+      "from": 277,
+      "to": 371,
+      "type": "external"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "The order is the contract",
+      "items": [
+        "plan, trace, sources, token, done",
+        "sources precedes the first token, always",
+        "Citations on screen before any prose"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "What the guarantee costs",
+      "items": [
+        "Retrieval completes before one token ships",
+        "ttft p50 7175ms vs a 2500ms target",
+        "The decide loop adds sequential LLM calls"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "When the far end is down",
+      "items": [
+        "Unreachable agent: 502, never a 2xx",
+        "Header timeout, not a whole-stream timeout",
+        "search 15s, LLM 20s, page fetch 12s"
+      ]
+    }
+  ]
+}

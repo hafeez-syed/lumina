@@ -118,6 +118,12 @@ export function registerAskRoute(
     const trace: TraceEvent[] = [];
     const toolRuns: ToolRun[] = [];
     const sources: Source[] = [];
+    /**
+     * Tool calls that already failed, keyed by tool plus exact input. A model that gets
+     * an error back sometimes reissues the identical call; without this it does so until
+     * the cap, which rule A2 counts as a failed run however good the answer was.
+     */
+    const failedCalls = new Set<string>();
     const observations: string[] = [];
     /** Search hits waiting to be fetched. Not citable until they are. */
     const candidates: { title: string; url: string; snippet: string }[] = [];
@@ -159,6 +165,7 @@ export function registerAskRoute(
       const step = trace.length + 1;
       let ok = true;
       let error: string | undefined;
+      const signature = `${decision.tool}:${JSON.stringify(decision.input ?? {})}`;
 
       try {
         switch (decision.tool) {
@@ -272,6 +279,9 @@ export function registerAskRoute(
       } catch (err) {
         ok = false;
         error = (err as Error).message || 'tool failed';
+        // Remember the exact call that failed, so the loop below can refuse to spend the
+        // rest of its budget rediscovering the same error.
+        failedCalls.add(signature);
       }
 
       const ev: TraceEvent = {
@@ -414,6 +424,19 @@ export function registerAskRoute(
           // A quick run that reaches plan_research has silently escalated into one costing
           // several times more. Refuse and answer with what we have.
           log.warn({ requestId }, 'quick run tried to escalate to plan_research; refused');
+          break;
+        }
+
+        /**
+         * Answer with what is already retrieved rather than grind to the cap. Breaking
+         * leaves `terminated` as 'done', which is the honest outcome: the loop stopped
+         * because it had nothing new to try, not because it ran out.
+         */
+        if (failedCalls.has(`${decision.tool}:${JSON.stringify(decision.input ?? {})}`)) {
+          log.warn(
+            { requestId, tool: decision.tool },
+            'model reissued a call that already failed; answering with what we have'
+          );
           break;
         }
 
