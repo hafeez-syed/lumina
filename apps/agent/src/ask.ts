@@ -304,6 +304,14 @@ export function registerAskRoute(
         // Remember the exact call that failed, so the loop below can refuse to spend the
         // rest of its budget rediscovering the same error.
         failedCalls.add(signature);
+        /**
+         * `observations` is the only thing decide() reads, and every other push sits on a
+         * success path — so a tool that threw reached the trace and the run log but never
+         * the model. It would then reissue the same call, or leave a fixable mistake
+         * unfixed: the bench caught save_memory called with empty text, told "save_memory
+         * needs a non-empty text", with no way to learn that and try again.
+         */
+        observations.push(`${decision.tool} FAILED → ${error}`);
       }
 
       const ev: TraceEvent = {
@@ -384,6 +392,18 @@ export function registerAskRoute(
             ...(depth === 'deep' ? { subQuestion: 1 } : {})
           });
           observations.push(`fetch_page(${r.hit.url}) → ${page.text.slice(0, 900)}`);
+        } else {
+          // Same reasoning as the catch above: a page the loop could not read is context
+          // the model needs, or it will pick the same url again.
+          observations.push(
+            `fetch_page(${r.hit.url}) FAILED → ${
+              tooThin
+                ? 'page has too little readable text to ground a citation'
+                : 'error' in r
+                  ? r.error
+                  : 'fetch failed'
+            }`
+          );
         }
 
         const ev: TraceEvent = {

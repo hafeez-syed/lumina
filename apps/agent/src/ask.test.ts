@@ -42,6 +42,8 @@ const PAGE_TEXT =
 let fetchFails = false;
 /** Set when the handler asks the fake for usage, recording whether a scope was open. */
 let sawUsageScope: boolean | null = null;
+/** Every observation list handed to decide(), so a test can assert what the model saw. */
+let seenObservations: string[][] = [];
 /**
  * A JS-rendered page Readability cannot read: what comes back is navigation chrome, not
  * content. The bench caught exactly this — a YouTube watch page cited with the snippet
@@ -65,7 +67,8 @@ const providers: Providers = {
         reason: 'two parts'
       };
     },
-    async decide() {
+    async decide(ctx: { observations: string[] }) {
+      seenObservations.push([...ctx.observations]);
       if (llmThrows) throw new Error('provider exploded');
       return script.length ? (script.shift() ?? null) : null;
     },
@@ -567,4 +570,28 @@ test('the ask route opens a usage scope for the request', async () => {
   await ask(await newThread(), { query: 'q' });
 
   assert.equal(sawUsageScope, true, 'the handler read usage outside any request scope');
+});
+
+test('a failed tool call is reported back to the model', async () => {
+  /**
+   * Every observations.push in the ask loop sits on a success path, so a tool that threw
+   * reached the trace and the run log but never the model. It then reissued the same call,
+   * or — as the bench caught — called save_memory with empty text, was told "save_memory
+   * needs a non-empty text", and had no way to know. Memory scored 0/10 on exactly that.
+   *
+   * The failure has to travel in `observations`, because that is the only channel decide()
+   * reads.
+   */
+  seenObservations = [];
+  script = [
+    { tool: 'fetch_page', input: { url: 'not-a-url' }, reason: 'try a bad page' },
+    { tool: 'web_search', input: { query: 'recover' }, reason: 'try something else' }
+  ];
+
+  await ask(await newThread(), { query: 'q' });
+
+  const toldAboutFailure = seenObservations.some((obs) =>
+    obs.some((o) => /fetch_page/.test(o) && /not a fetchable url/.test(o))
+  );
+  assert.ok(toldAboutFailure, 'the model was never told its call failed, so it cannot correct');
 });
