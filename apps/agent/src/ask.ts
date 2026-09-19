@@ -124,6 +124,14 @@ export function registerAskRoute(
      * the cap, which rule A2 counts as a failed run however good the answer was.
      */
     const failedCalls = new Set<string>();
+    /**
+     * How many times in a row one tool may be chosen. A model that reaches for the same
+     * tool a fifth consecutive time is not converging on an answer, it is stuck in a
+     * groove — and it spends the rest of the budget there, which is how a run ends 'cap'
+     * instead of 'done'. Four leaves room for the legitimate pattern (one search, then
+     * the three pages it turned up) without room for a loop.
+     */
+    const MAX_CONSECUTIVE_SAME_TOOL = 4;
     const observations: string[] = [];
     /** Search hits waiting to be fetched. Not citable until they are. */
     const candidates: { title: string; url: string; snippet: string }[] = [];
@@ -436,6 +444,16 @@ export function registerAskRoute(
           log.warn(
             { requestId, tool: decision.tool },
             'model reissued a call that already failed; answering with what we have'
+          );
+          break;
+        }
+
+        let consecutive = 0;
+        for (let i = trace.length - 1; i >= 0 && trace[i]?.tool === decision.tool; i--) consecutive++;
+        if (consecutive >= MAX_CONSECUTIVE_SAME_TOOL) {
+          log.warn(
+            { requestId, tool: decision.tool, consecutive },
+            'the same tool was chosen too many times in a row; answering with what we have'
           );
           break;
         }

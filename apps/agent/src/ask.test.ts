@@ -250,10 +250,12 @@ test('the done event reports the gear that actually ran', async () => {
 });
 
 test('a run that hits the tool-call cap terminates as cap, not as success', async () => {
-  // More decisions than the quick cap allows.
-  script = Array.from({ length: env.maxToolCalls + 4 }, () => ({
-    tool: 'web_search' as const,
-    input: { query: 'again' },
+  // More decisions than the quick cap allows. The tools alternate on purpose: calling one
+  // of them this many times in a row now stops the loop for a different and better reason
+  // (the consecutive bound), and this test is about exhausting the budget, not about that.
+  script = Array.from({ length: env.maxToolCalls + 4 }, (_, i) => ({
+    tool: i % 2 === 0 ? ('web_search' as const) : ('fetch_page' as const),
+    input: i % 2 === 0 ? { query: `again ${i}` } : { url: `https://example.com/p${i}` },
     reason: 'loop'
   }));
 
@@ -510,4 +512,35 @@ test('a call that already failed with the same input is not retried until the ca
 
   assert.equal(done.terminated, 'done', 'the loop ground to the cap on a call it had already failed');
   assert.ok(failed.length <= 1, `the same failing call was repeated ${failed.length} times`);
+});
+
+test('one tool is not called past the consecutive bound', async () => {
+  /**
+   * A3 caps consecutive calls of one tool at 4 and the deployed runs reached eight:
+   * "search_documents" called 8x consecutively. A model that reaches for the same tool
+   * that many times in a row is not converging, it is stuck — and it spends the whole
+   * budget getting there, which then also shows up as a run terminating 'cap'.
+   *
+   * The inputs vary so the already-failed guard is not what stops it: these calls all
+   * succeed, and they still have to be bounded.
+   */
+  script = Array.from({ length: 12 }, (_, i) => ({
+    tool: 'web_search' as const,
+    input: { query: `again ${i}` },
+    reason: 'keep searching'
+  }));
+
+  const { frames } = await ask(await newThread(), { query: 'q', depth: 'deep' });
+  const tools = frames
+    .filter((f) => f.event === 'trace')
+    .map((f) => (f.data as { tool: string }).tool);
+
+  let worst = 0, streak = 0, prev: string | null = null, who: string | null = null;
+  for (const t of tools) {
+    streak = t === prev ? streak + 1 : 1;
+    prev = t;
+    if (streak > worst) { worst = streak; who = t; }
+  }
+
+  assert.ok(worst <= 4, `"${who}" ran ${worst}x consecutively (A3 caps this at 4)`);
 });
