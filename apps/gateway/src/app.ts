@@ -4,7 +4,7 @@
  */
 import express from 'express';
 import cors from 'cors';
-import { pinoHttp } from 'pino-http';
+import { pinoHttp, stdSerializers } from 'pino-http';
 import pino, { type Logger } from 'pino';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -23,6 +23,35 @@ export type AppOverrides = {
   agentUrl?: string;
   upstreamTimeoutMs?: number;
   evalsReportPath?: string;
+};
+
+/**
+ * Headers that carry a live credential. pino-http serialises the whole inbound header
+ * block, so without this a proxy's bearer token is readable by anyone who can run
+ * `fly logs`. Vercel attaches an OIDC JWT to every forwarded request and nests a second
+ * bearer token inside x-vercel-sc-headers.
+ */
+const SENSITIVE_HEADERS = new Set([
+  'authorization',
+  'proxy-authorization',
+  'cookie',
+  'x-vercel-oidc-token',
+  'x-vercel-proxy-signature',
+  'x-vercel-sc-headers'
+]);
+
+/**
+ * Redaction lives on the serialiser rather than on a `pino({ redact })` instance because
+ * the logger is injected: index.ts builds one and every test builds its own. Attached
+ * here, no caller can construct a gateway that leaks.
+ */
+const redactedReq: typeof stdSerializers.req = (req) => {
+  const serialized = stdSerializers.req(req);
+  const headers: Record<string, string> = { ...serialized.headers };
+  for (const name of Object.keys(headers)) {
+    if (SENSITIVE_HEADERS.has(name.toLowerCase())) headers[name] = '[Redacted]';
+  }
+  return { ...serialized, headers };
 };
 
 export function createApp(
@@ -54,7 +83,8 @@ export function createApp(
         userId: req.header(USER_HEADER) ?? null
       }),
       // The ask route is a stream; one line when it closes is the useful line.
-      autoLogging: true
+      autoLogging: true,
+      serializers: { req: redactedReq }
     })
   );
 
