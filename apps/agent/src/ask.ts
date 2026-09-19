@@ -38,7 +38,7 @@ import { sseHeaders, sseSend } from './sse.js';
 import { env } from './env.js';
 import type { Providers, ToolDecision } from './providers.js';
 import { hybridSearch, recallMemories } from './retrieval.js';
-import { bestPassage } from './passage.js';
+import { GROUNDING_WINDOW_TOKENS, bestPassage, groundingTokens } from './passage.js';
 
 type ToolRun = { name: AskTool; ok: boolean; error?: string; ms?: number };
 
@@ -192,12 +192,26 @@ export function registerAskRoute(
             // Validated here so a bad url is a failed step with a reason, not a crash.
             if (!/^https?:\/\//i.test(url)) throw new Error(`not a fetchable url: ${url}`);
             const page = await providers.page.fetch(url);
+            const snippet = bestPassage(page.text, query) || page.text.slice(0, 600);
+            /**
+             * A JS-rendered page gives Readability nothing but navigation chrome, and
+             * citing that is ungrounded by construction: the bench caught a YouTube watch
+             * page cited as "AboutPressCopyright...© 2026 Google LLC" — 10 tokens of
+             * boilerplate supporting no claim. A page that cannot yield one grounding
+             * window is a failed read, not a source.
+             */
+            if (groundingTokens(snippet) < GROUNDING_WINDOW_TOKENS) {
+              throw new Error(
+                `page has too little readable text to ground a citation ` +
+                  `(${groundingTokens(snippet)} tokens, need ${GROUNDING_WINDOW_TOKENS}): ${url}`
+              );
+            }
             addSource({
               kind: 'web',
               title: page.title,
               // Verbatim from the page, and about the question: the grounding check
               // re-fetches this page and looks for the snippet inside it.
-              snippet: bestPassage(page.text, query) || page.text.slice(0, 600),
+              snippet,
               url,
               subQuestion
             });
@@ -322,16 +336,22 @@ export function registerAskRoute(
       );
 
       for (const r of reads) {
-        const ok = 'page' in r && Boolean(r.page);
-        if (ok && r.page) {
+        const page = 'page' in r ? r.page : undefined;
+        const snippet = page ? bestPassage(page.text, query) || page.text.slice(0, 600) : '';
+        // Same rule as the fetch_page tool above: a page that cannot yield one grounding
+        // window is a failed read. Not thrown here — one unreadable page must not abandon
+        // the others this loop is reading.
+        const tooThin = Boolean(page) && groundingTokens(snippet) < GROUNDING_WINDOW_TOKENS;
+        const ok = Boolean(page) && !tooThin;
+        if (ok && page) {
           addSource({
             kind: 'web',
-            title: r.page.title,
-            snippet: bestPassage(r.page.text, query) || r.page.text.slice(0, 600),
+            title: page.title,
+            snippet,
             url: r.hit.url,
             ...(depth === 'deep' ? { subQuestion: 1 } : {})
           });
-          observations.push(`fetch_page(${r.hit.url}) → ${r.page.text.slice(0, 900)}`);
+          observations.push(`fetch_page(${r.hit.url}) → ${page.text.slice(0, 900)}`);
         }
 
         const ev: TraceEvent = {
@@ -341,7 +361,16 @@ export function registerAskRoute(
           ok,
           ms: r.ms,
           reason: `read ${r.hit.title} rather than cite the search summary`,
-          ...(ok ? {} : { error: 'error' in r ? r.error : 'fetch failed' }),
+          ...(ok
+            ? {}
+            : {
+                error: tooThin
+                  ? `page has too little readable text to ground a citation ` +
+                    `(${groundingTokens(snippet)} tokens, need ${GROUNDING_WINDOW_TOKENS})`
+                  : 'error' in r
+                    ? r.error
+                    : 'fetch failed'
+              }),
           ...(depth === 'deep' ? { subQuestion: 1 } : {})
         };
         trace.push(ev);

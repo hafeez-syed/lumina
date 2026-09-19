@@ -58,3 +58,25 @@ export function bestPassage(text: string, query: string, maxWords = MAX_WORDS): 
 
   return words.slice(best.start, best.start + size).join(' ');
 }
+
+/**
+ * The window the grounding checker slides over a snippet (benchmark/lib.mjs,
+ * `snippetIsGrounded`, minTokens = 12). A snippet with fewer tokens than this cannot
+ * contain one, so the checker falls back to requiring the whole string verbatim — which a
+ * re-fetch rarely reproduces.
+ */
+export const GROUNDING_WINDOW_TOKENS = 12;
+
+/**
+ * Token count under the checker's own normalisation, so this measures the same thing the
+ * bench will. Kept in step with `normalize` in benchmark/lib.mjs.
+ */
+export function groundingTokens(snippet: string): number {
+  return snippet
+    .toLowerCase()
+    .replace(/[‘’“”]/g, "'")
+    .replace(/[^a-z0-9']+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean).length;
+}

@@ -40,6 +40,14 @@ const PAGE_TEXT =
   'PAGE-BODY Atlas Vector Search uses approximate nearest neighbour indexes to trade a ' +
   'little recall for a great deal of speed, which is the whole point of an approximate index.';
 let fetchFails = false;
+/**
+ * A JS-rendered page Readability cannot read: what comes back is navigation chrome, not
+ * content. The bench caught exactly this — a YouTube watch page cited with the snippet
+ * "AboutPressCopyright...© 2026 Google LLC", 10 tokens of boilerplate that support no
+ * claim and cannot carry the checker's 12-token window.
+ */
+const CHROME_TEXT = 'About Press Copyright Contact us Creators Advertise Developers © 2026 Google LLC';
+const thinPages = new Set<string>();
 /** Lets a test put measurable time inside retrieval, so a timing stamp is not just 0. */
 let searchDelayMs = 0;
 
@@ -75,6 +83,7 @@ const providers: Providers = {
   page: {
     async fetch(url: string) {
       if (fetchFails) throw new Error(`403 for ${url}`);
+      if (thinPages.has(url)) return { title: `Page ${url}`, text: CHROME_TEXT };
       return { title: `Page ${url}`, text: PAGE_TEXT };
     }
   },
@@ -439,4 +448,38 @@ test('the deep daily cap is enforced in the agent, with a resetsAt', async () =>
   assert.equal(res.status, 429);
   const body = (await res.json()) as { resetsAt?: string };
   assert.ok(body.resetsAt, 'a 429 must say when the cap resets');
+});
+
+const YT = 'https://www.youtube.com/watch?v=OOwxoPdTN40';
+
+test('a page too thin to carry a grounding window is not cited', async () => {
+  thinPages.add(YT);
+  script = [{ tool: 'fetch_page', input: { url: YT }, reason: 'read the video page' }];
+
+  const { frames } = await ask(await newThread(), { query: 'approximate nearest neighbour' });
+  const sources = frames.find((f) => f.event === 'sources')?.data as Source[];
+  thinPages.delete(YT);
+
+  assert.ok(sources.length > 0, 'the readable pages should still be cited');
+  assert.equal(
+    sources.some((s) => s.url === YT),
+    false,
+    'a chrome-only page became a citable source, which is an ungrounded citation by construction'
+  );
+});
+
+test('a page rejected as too thin is a failed step with a reason, not a silent drop', async () => {
+  thinPages.add(YT);
+  script = [{ tool: 'fetch_page', input: { url: YT }, reason: 'read the video page' }];
+
+  const { frames } = await ask(await newThread(), { query: 'approximate nearest neighbour' });
+  thinPages.delete(YT);
+
+  const step = frames
+    .filter((f) => f.event === 'trace')
+    .map((f) => f.data as { tool: string; ok: boolean; error?: string })
+    .find((t) => t.tool === 'fetch_page' && !t.ok);
+
+  assert.ok(step, 'the rejected fetch left no failed trace step');
+  assert.ok(step.error?.trim(), 'ok:false must carry an error (A1)');
 });
