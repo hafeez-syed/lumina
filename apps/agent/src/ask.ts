@@ -344,10 +344,39 @@ export function registerAskRoute(
        * retrieved source is ungrounded by construction, and the grounding check would
        * rightly fail it.
        */
+      /**
+       * Router `auto` decides from the Space's contents, which means its indexed chunks:
+       * that is what search_documents actually retrieves from, so a Space holding only a
+       * pending upload must not be routed to. One bounded count, not a retrieval — this
+       * sits in front of the first token.
+       *
+       * Before this, `mode` was read in exactly one place and the only branch was 'docs',
+       * so auto fell through to the web permanently and never touched a Space.
+       */
+      const autoUsesSpace =
+        mode === 'auto' && Boolean(spaceId)
+          ? (await db.collection(COLLECTIONS.chunks).countDocuments({ spaceId }, { limit: 1 })) > 0
+          : false;
+
+      // The reason travels into the trace, which is where SPEC 97 requires the decision
+      // and its reason to appear.
       const firstStep: ToolDecision =
-        mode === 'docs'
-          ? { tool: 'search_documents', input: { query }, reason: 'answer from the selected Space' }
-          : { tool: 'web_search', input: { query }, reason: 'ground the answer in current sources' };
+        mode === 'docs' || autoUsesSpace
+          ? {
+              tool: 'search_documents',
+              input: { query },
+              reason: autoUsesSpace
+                ? 'auto: this Space has indexed content, so look there before the web'
+                : 'answer from the selected Space'
+            }
+          : {
+              tool: 'web_search',
+              input: { query },
+              reason:
+                mode === 'auto' && spaceId
+                  ? 'auto: this Space has nothing indexed yet, so search the web'
+                  : 'ground the answer in current sources'
+            };
       await runTool(firstStep, depth === 'deep' ? 1 : undefined);
 
       /**

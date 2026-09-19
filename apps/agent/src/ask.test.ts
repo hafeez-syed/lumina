@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MongoClient, type Db } from 'mongodb';
 import pino from 'pino';
-import { AskStreamEvent, unresolvedCitations, type Source } from '@lumina/contract';
+import { AskStreamEvent, COLLECTIONS, unresolvedCitations, type Source } from '@lumina/contract';
 import { createApp } from './app.js';
 import { hasUsageScope, type Providers, type ToolDecision } from './providers.js';
 import { env } from './env.js';
@@ -594,4 +594,62 @@ test('a failed tool call is reported back to the model', async () => {
     obs.some((o) => /fetch_page/.test(o) && /not a fetchable url/.test(o))
   );
   assert.ok(toldAboutFailure, 'the model was never told its call failed, so it cannot correct');
+});
+
+/**
+ * SPEC line 97: router mode `auto` decides web vs documents vs both from the query and the
+ * Space's contents, and the decision and its reason appear in the trace. `mode` occurred
+ * exactly twice in this file and the only branch was `mode === 'docs'`, so auto fell
+ * through to web search permanently — the bench reported "mode=auto never touched the
+ * Space on a corpus question".
+ *
+ * The Space's contents means its indexed chunks: that is what search_documents retrieves
+ * from, so an empty Space must not be routed to.
+ */
+const firstTool = (frames: Frame[]) =>
+  frames.filter((f) => f.event === 'trace').map((f) => (f.data as { tool: string }).tool)[0];
+
+test('auto mode searches the Space when it holds indexed content', async () => {
+  const spaceId = 'spc_auto_full';
+  // Idempotent: this suite runs against a real database that is not reset between runs.
+  await db.collection(COLLECTIONS.chunks).replaceOne(
+    { _id: 'chk_auto_1' as never },
+    {
+      docId: 'doc_auto_1', spaceId, userId: 'alice',
+      text: 'PAGE-BODY the corpus explains approximate nearest neighbour indexes.',
+      locator: { page: 1 }, createdAt: new Date().toISOString()
+    } as never,
+    { upsert: true }
+  );
+  script = [];
+
+  const { frames } = await ask(await newThread(), { query: 'what does the corpus say', mode: 'auto', spaceId });
+
+  assert.equal(firstTool(frames), 'search_documents', 'auto never touched the Space');
+});
+
+test('auto mode goes to the web when the Space is empty', async () => {
+  script = [];
+  const { frames } = await ask(await newThread(), { query: 'a current events question', mode: 'auto', spaceId: 'spc_auto_empty' });
+
+  assert.equal(firstTool(frames), 'web_search', 'auto routed to an empty Space');
+});
+
+test('the auto routing decision carries its reason into the trace', async () => {
+  const spaceId = 'spc_auto_reason';
+  await db.collection(COLLECTIONS.chunks).replaceOne(
+    { _id: 'chk_auto_2' as never },
+    {
+      docId: 'doc_auto_2', spaceId, userId: 'alice',
+      text: 'PAGE-BODY another corpus passage about vector indexes and recall.',
+      locator: { page: 1 }, createdAt: new Date().toISOString()
+    } as never,
+    { upsert: true }
+  );
+  script = [];
+
+  const { frames } = await ask(await newThread(), { query: 'what does the corpus say', mode: 'auto', spaceId });
+  const step = frames.filter((f) => f.event === 'trace').map((f) => f.data as { reason?: string })[0];
+
+  assert.ok(step?.reason?.trim(), 'the routing step carried no reason (SPEC 97)');
 });
