@@ -91,7 +91,7 @@ export const SearchCacheDoc = z.object({
   _id: z.string(),
   provider: z.enum(['tavily', 'serpapi']),
   query: z.string(),
-  results: z.array(z.record(z.unknown())),
+  results: z.array(z.record(z.string(), z.unknown())),
   /** The TTL index on this field is what expires the row; do not delete rows by hand. */
   expiresAt: iso,
   createdAt: iso
@@ -108,7 +108,7 @@ export const JobDoc = z.object({
   _id: z.string(),
   kind: JobKind,
   status: JobStatus,
-  payload: z.record(z.unknown()),
+  payload: z.record(z.string(), z.unknown()),
   userId: UserId,
   /** Stale `claimedAt` on a `running` row is how the sweeper finds a crashed job. */
   claimedAt: iso.optional(),

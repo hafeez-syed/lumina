@@ -52,7 +52,7 @@ export const TraceEvent = z
   .object({
     step: z.number().int().positive(),
     tool: ToolName,
-    input: z.record(z.unknown()),
+    input: z.record(z.string(), z.unknown()),
     ok: z.boolean(),
     ms: z.number().nonnegative(),
     reason: z.string().optional(),

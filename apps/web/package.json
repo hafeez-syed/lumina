@@ -11,7 +11,7 @@
     "check-types": "next typegen && tsc --noEmit"
   },
   "dependencies": {
-    "@lumina/ui": "workspace:*",
+    "@lumina/contract": "workspace:*",
     "next": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:"

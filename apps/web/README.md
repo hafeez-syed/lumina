@@ -30,11 +30,19 @@ Open <http://localhost:3000>.
 
 ## Talking to the backend
 
-The browser talks **only** to the gateway (`:8787`), never to the agent service. Point the app
-at the gateway with a public env var, e.g. `NEXT_PUBLIC_API_URL=http://localhost:8787`.
+The browser calls this app's own `/api/*` Route Handlers, which proxy to the gateway
+server-side ([`app/api/[...path]/route.ts`](app/api/%5B...path%5D/route.ts)). The browser
+never reaches the agent service and never holds a key.
 
-The gateway's CORS allowlist defaults to `http://localhost:3000`; override it with
-`CORS_ORIGINS` when you deploy.
+Point the proxy at the gateway with a **server-only** env var:
+
+```bash
+GATEWAY_URL=http://localhost:8787   # defaults to this if unset
+```
+
+It is deliberately not `NEXT_PUBLIC_*` — the gateway address stays out of the client bundle.
+Because the UI is now same-origin, it triggers no CORS preflight; the gateway's `CORS_ORIGINS`
+still matters for the benchmark and eval harness, which call it directly.
 
 Types for every route and SSE event come from [`@lumina/contract`](../../packages/contract) —
 import them rather than restating shapes.

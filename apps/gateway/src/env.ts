@@ -20,6 +20,14 @@ export const env = {
   rateLimitPerMinute: num(process.env.RATE_LIMIT_PER_MINUTE, 30),
   logLevel: process.env.LOG_LEVEL ?? 'info',
   /**
+   * The Product Evaluation the `/fde-lumina-eval` run writes. The gateway serves it at
+   * GET /evals/report.json — that page IS the submission, so it must be readable by
+   * someone with no header and no account.
+   */
+  evalsReportPath: resolve(
+    process.env.EVALS_REPORT ?? resolve(process.cwd(), '../../reports/report.json')
+  ),
+  /**
    * Optional: serve a pre-built static UI from the gateway so one host serves / and /evals.
    * Unset by default. The Next.js app in `apps/web` is deployed on its own (see TECHNICAL.md
    * Part 4) and only produces a static directory if you set `output: 'export'` in

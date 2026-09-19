@@ -106,7 +106,7 @@ export const TrajectoryStep = z.object({
   tool: ToolName,
   ok: z.boolean(),
   ms: z.number().nonnegative().optional(),
-  input: z.record(z.unknown()).optional(),
+  input: z.record(z.string(), z.unknown()).optional(),
   reason: z.string().optional(),
   error: z.string().optional(),
   subQuestion: z.number().int().positive().optional()

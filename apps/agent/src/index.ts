@@ -1,95 +1,46 @@
 /**
- * LUMINA agent service — the AI backend. PROVIDED SKELETON: YOU BUILD THIS OUT.
- * This is where the real work is. Provider keys live only in this process.
+ * LUMINA agent service — the AI backend. Provider keys live only in this process.
  *
- * What is already here: the server, /health (Mongo ping + which model, provider and
- * vector backend are live), and a 501 for every other route.
+ * Implemented: /health (Mongo ping + which model, provider and vector backend are live),
+ * the X-User-Id check, and threads + messages. Everything else still answers 501.
  *
- * What you build (README Part 1, in this order — each step is testable with curl -N):
+ * Still to build (TECHNICAL.md Part 1, in order — each step is testable with curl -N):
  *   1. the QUICK loop: plan → choose tool → observe → repeat → answer, with web_search
  *      and fetch_page, streaming trace → sources → token → done. sources BEFORE the
  *      first token. Disable compression on this route and flush after every event.
- *   2. the search cache: in-process LRU over the searchCache collection (TTL index),
- *      key = sha256(normalized query + provider). searchCached only when every hit.
- *   3. threads + messages, so a follow-up sees the thread.
- *   4. memory: save_memory / recall_memory over the memories vector index; GET /memory,
- *      DELETE /memory/:id.
- *   5. the run log: one runs/<requestId>.json per answer, in the RunLog shape from the
- *      contract. Ten lines. The gates read it, so it is not optional.
- *   6. spaces + the jobs worker: upload → GridFS → parse → chunk → embed → upsert →
+ *   2. the search cache: in-process LRU over the searchCache collection (TTL index).
+ *   3. memory: save_memory / recall_memory; GET /memory, DELETE /memory/:id.
+ *   4. the run log: one runs/<requestId>.json per answer, in the RunLog shape.
+ *   5. spaces + the jobs worker: upload → GridFS → parse → chunk → embed → upsert →
  *      read-your-write probe → indexed.
- *   7. hybrid retrieval: $vectorSearch + $search fused with RRF, page locators.
- *   8. DEEP search (depth: "deep"): plan_research decomposes the question into 3–6
- *      sub-questions, you stream a `plan` event BEFORE retrieving anything, research each
- *      sub-question, then merge the results into ONE citation numbering and synthesise.
- *      Every trace step and every source carries the subQuestion it served. Deep runs
- *      under the wider caps (maxToolCallsDeep, maxWallClockSecDeep) and behind
- *      DEEP_DAILY_CAP → 429 {error, resetsAt}.
+ *   6. hybrid retrieval: $vectorSearch + $search fused with RRF, page locators.
+ *   7. DEEP search behind DEEP_DAILY_CAP → 429 {error, resetsAt}.
  *
  * Three rules to hold on to while you write it:
  *   - Fail loud. A provider exception ends the run with terminated:"error" and a 502.
- *     Never a try/catch that returns a plausible answer. (Live Translate served English
- *     for weeks because of exactly that catch.)
  *   - Grounded or nothing. A citation that does not resolve to something retrieved in
  *     THIS request is an automatic fail.
- *   - Depth is opted into, never drifted into. A quick search may not call plan_research,
- *     however much the model would like to. Deep costs several times more, and a product
- *     that escalates itself is a product with an unbounded bill.
+ *   - Depth is opted into, never drifted into. A quick search may not call plan_research.
+ *
+ * The app itself lives in `app.ts` so tests can mount it against a throwaway database.
  */
-import express from 'express';
 import pino from 'pino';
 import { mkdirSync } from 'node:fs';
-import { HealthResponse, ROUTES } from '@lumina/contract';
+import { createApp } from './app.js';
 import { env } from './env.js';
-import { pingDb } from './db.js';
 
 const log = pino({ level: env.logLevel });
-const app = express();
 
-app.disable('x-powered-by');
-app.use((req, res, next) =>
-  req.path.endsWith('/documents') && req.method === 'POST'
-    ? next()
-    : express.json({ limit: '1mb' })(req, res, next)
-);
+/**
+ * Bind on all interfaces including IPv6. Fly's private `.internal` DNS returns
+ * AAAA records only, so an IPv4-only bind is unreachable from a sibling app and
+ * the symptom looks like a networking fault rather than a bind one.
+ */
+const HOST = process.env.HOST ?? '::';
 
 mkdirSync(env.runsDir, { recursive: true });
 
-// ---------------------------------------------------------------- /health (implemented)
-
-app.get('/health', async (_req, res) => {
-  const dbStatus = await pingDb();
-  const body: HealthResponse = {
-    status: dbStatus === 'ok' ? 'ok' : 'degraded',
-    model: env.llmModel,
-    searchProvider: env.searchProvider,
-    vectorStore: env.vectorBackend,
-    db: dbStatus,
-    ai: { status: 'ok' }
-  };
-  res.status(dbStatus === 'ok' ? 200 : 503).json(body);
-});
-
-// ---------------------------------------------------------------- everything else: 501
-
-const notImplemented = (route: string) => (_req: express.Request, res: express.Response) => {
-  res.status(501).json({ error: `not implemented yet: ${route}. Build it in backend/agent/src/.`, status: 501 });
-};
-
-for (const route of ROUTES) {
-  if (route.path === '/health' || route.path === '/evals/report.json') continue;
-  const method = route.method.toLowerCase() as 'get' | 'post' | 'delete';
-  app[method](route.path, notImplemented(`${route.method} ${route.path}`));
-}
-
-app.use((req, res) => res.status(404).json({ error: `no route ${req.method} ${req.path}`, status: 404 }));
-
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  log.error({ err }, 'agent error');
-  res.status(502).json({ error: err.message, status: 502 });
-});
-
-app.listen(env.port, () => {
+createApp({ log }).listen(env.port, HOST, () => {
   log.info(
     {
       port: env.port,
@@ -98,9 +49,13 @@ app.listen(env.port, () => {
       vectorStore: env.vectorBackend,
       caps: {
         quick: { toolCalls: env.maxToolCalls, wallClockSec: env.maxWallClockSec },
-        deep: { toolCalls: env.maxToolCallsDeep, wallClockSec: env.maxWallClockSecDeep, dailyCap: env.deepDailyCap }
+        deep: {
+          toolCalls: env.maxToolCallsDeep,
+          wallClockSec: env.maxWallClockSecDeep,
+          dailyCap: env.deepDailyCap
+        }
       }
     },
-    'agent up — every route but /health returns 501 until you build it'
+    'agent up — /health, the X-User-Id check and threads are live; the rest returns 501'
   );
 });

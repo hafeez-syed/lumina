@@ -279,7 +279,7 @@ Three deployables:
 ```bash
 cd apps/agent      && fly launch --no-deploy && fly secrets set MONGODB_URI=... ANTHROPIC_API_KEY=... TAVILY_API_KEY=... OPENAI_API_KEY=... && fly deploy
 cd ../gateway      && fly launch --no-deploy && fly secrets set AGENT_URL=https://<your-agent>.fly.dev && fly deploy
-cd ../web          && vercel --prod          # NEXT_PUBLIC_API_URL=https://<your-gateway>.fly.dev
+cd ../web          && vercel --prod          # set GATEWAY_URL=https://<your-gateway>.fly.dev (server-only)
 ```
 
 Evaluation runs against the **deployed** gateway:

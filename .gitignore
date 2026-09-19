@@ -42,3 +42,7 @@ yarn-error.log*
 
 # Local-only eval tooling (kept on disk so the gates still run).
 .claude/skills/fde-lumina-eval/
+
+# Run logs and generated reports — artifacts of a run, never committed (AGENTS.md hygiene).
+runs/
+reports/

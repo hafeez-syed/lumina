@@ -39,7 +39,14 @@ export const env = {
 
   logLevel: process.env.LOG_LEVEL ?? 'info',
   /** Where the per-answer run logs land. quality/check.mjs reads this folder. */
-  runsDir: resolve(process.cwd(), '../../runs')
+  /**
+   * Where per-answer run logs land. In a container the repo-relative default escapes
+   * the app directory, so deployments set RUNS_DIR. The authoritative copy is the
+   * `runs` collection either way; `scripts/export-runs.mjs` pulls it back.
+   */
+  runsDir: process.env.RUNS_DIR
+    ? resolve(process.env.RUNS_DIR)
+    : resolve(process.cwd(), '../../runs')
 } as const;
 
 /** Never log or return these. /health names the model; it never echoes a key. */

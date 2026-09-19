@@ -7,14 +7,16 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "worker": "tsx watch src/worker.ts",
+    "worker": "tsx watch src/worker-main.ts",
     "build": "tsc -p tsconfig.json",
+    "test": "tsx --test \"src/**/*.test.ts\"",
     "start": "node dist/index.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "check-types": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@lumina/contract": "workspace:*",
     "@mozilla/readability": "catalog:",
+    "@tavily/core": "^0.7.12",
     "dotenv": "catalog:",
     "express": "catalog:",
     "jsdom": "catalog:",
