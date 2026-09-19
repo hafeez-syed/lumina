@@ -22,7 +22,7 @@ import { createHash } from 'node:crypto';
 import type { Db } from 'mongodb';
 import { COLLECTIONS, type SearchCacheDoc } from '@lumina/contract';
 import { env } from './env.js';
-import type { SearchHit, SearchKey, SearchProvider } from './providers.js';
+import type { PageFetcher, SearchHit, SearchKey, SearchProvider } from './providers.js';
 
 /**
  * Case and whitespace are not meaning. Trailing punctuation is not either: "what is a TTL
@@ -258,6 +258,71 @@ export class CachedSearch implements SearchProvider {
     } catch (err) {
       // The LRU already has it, so this process still benefits; the next one will not.
       this.deps.onError?.('write', err);
+    }
+  }
+}
+
+type PageEntry = { page: { title: string; text: string }; expiresAt: number };
+
+export type CachedPageDeps = {
+  ttlSeconds?: number;
+  maxEntries?: number;
+  now?: () => number;
+};
+
+/**
+ * A cache in front of `fetch_page`, which had none: `providers.ts` built a bare
+ * `ReadablePage()`, so a repeated question re-downloaded pages it had already read and
+ * paid the latency again before the first token.
+ *
+ * One tier, not two. The durable tier would need a `pageCache` collection declared in
+ * `packages/contract`, which this assignment may not modify, so this is an in-process LRU
+ * and a restart starts cold. That is the honest trade: it helps a warm process and does
+ * nothing after a deploy.
+ *
+ * The TTL is short by default. The grounding checker re-fetches each cited page live and
+ * looks for the stored snippet inside it, so a page served from a long-lived cache can
+ * drift out of the document it claims to quote — a cache that costs grounding is not worth
+ * the milliseconds.
+ */
+export class CachedPage implements PageFetcher {
+  private readonly lru: Lru<PageEntry>;
+  private readonly ttlMs: number;
+  private readonly now: () => number;
+  /** As in `CachedSearch`: concurrent readers of one url must not all pay for it. */
+  private readonly inflight = new Map<string, Promise<{ title: string; text: string }>>();
+
+  constructor(
+    private readonly inner: PageFetcher,
+    deps: CachedPageDeps = {}
+  ) {
+    this.ttlMs = (deps.ttlSeconds ?? 300) * 1000;
+    this.lru = new Lru<PageEntry>(deps.maxEntries ?? 200);
+    this.now = deps.now ?? Date.now;
+  }
+
+  async fetch(url: string): Promise<{ title: string; text: string }> {
+    const now = this.now();
+
+    const local = this.lru.get(url);
+    if (local && local.expiresAt > now) return local.page;
+
+    const running = this.inflight.get(url);
+    if (running) return running;
+
+    const work = (async () => {
+      const page = await this.inner.fetch(url);
+      this.lru.set(url, { page, expiresAt: this.now() + this.ttlMs });
+      return page;
+    })();
+    this.inflight.set(url, work);
+
+    try {
+      return await work;
+    } finally {
+      // Released on failure too: a page that failed once must be retryable, and an
+      // errored promise left in the map would be re-awaited by every later caller.
+      this.inflight.delete(url);
     }
   }
 }

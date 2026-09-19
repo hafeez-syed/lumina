@@ -10,7 +10,7 @@
  * is precisely the Live Translate failure.
  */
 import type { AskTool, PlanEvent } from '@lumina/contract';
-import { CachedSearch, mongoCacheStore } from './cache.js';
+import { CachedPage, CachedSearch, mongoCacheStore } from './cache.js';
 import { db } from './db.js';
 import { env, secrets } from './env.js';
 
@@ -413,7 +413,9 @@ export function defaultProviders(): Providers {
     // The loop only ever sees a SearchProvider; that the results came from a cache is the
     // decorator's business, and `cached` is the one thing it adds to the answer.
     search: new CachedSearch(new WebSearch(), mongoCacheStore(db)),
-    page: new ReadablePage(),
+    // Same decorator shape as `search`: the loop still sees only a PageFetcher. One tier
+    // and a short ttl — see CachedPage for why it is not backed by Mongo.
+    page: new CachedPage(new ReadablePage()),
     embed: new OpenAiEmbedder()
   };
 }

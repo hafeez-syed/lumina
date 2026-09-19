@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SearchCacheDoc } from '@lumina/contract';
 import {
+  CachedPage,
   CachedSearch,
   Lru,
   cacheKey,
@@ -9,7 +10,7 @@ import {
   normalizeQuery,
   type CacheStore
 } from './cache.js';
-import type { SearchHit, SearchKey, SearchProvider } from './providers.js';
+import type { PageFetcher, SearchHit, SearchKey, SearchProvider } from './providers.js';
 
 /**
  * The cache is policy, not plumbing, so it is tested through its seam rather than against
@@ -284,4 +285,84 @@ test('time-sensitivity is judged on the question, not the model rewrite', async 
   // And the reverse: a genuinely time-sensitive question is not cached however it is rewritten.
   await cache.search('node release notes', { basis: 'what is the latest Node release', ordinal: 0 });
   assert.equal(store.rows.size, 1);
+});
+
+// ------------------------------------------------------------------ CachedPage
+/**
+ * `fetch_page` was the one retrieval call with no cache in front of it: providers.ts
+ * built a bare `ReadablePage()`, so a repeated question re-downloaded the same pages and
+ * paid ~1.1s of TTFT for bytes it already had. Unlike the search cache this is one tier —
+ * an in-process LRU — because the durable tier would need a `pageCache` collection in
+ * `packages/contract`, which this assignment may not modify.
+ *
+ * The TTL is deliberately short: the grounding checker re-fetches pages live, so a snippet
+ * served from a stale cache can drift out of the page it claims to quote.
+ */
+class FakePage implements PageFetcher {
+  calls: string[] = [];
+  fail = false;
+  constructor(private readonly onCall: (url: string) => Promise<{ title: string; text: string }> =
+    async (url) => ({ title: `t:${url}`, text: `body of ${url}` })) {}
+  async fetch(url: string): Promise<{ title: string; text: string }> {
+    this.calls.push(url);
+    if (this.fail) throw new Error('upstream page fetch failed');
+    return this.onCall(url);
+  }
+}
+
+test('a repeated url is served from cache instead of re-fetched', async () => {
+  const inner = new FakePage();
+  const page = new CachedPage(inner, { ttlSeconds: 60 });
+
+  const first = await page.fetch('https://example.com/a');
+  const second = await page.fetch('https://example.com/a');
+
+  assert.deepEqual(second, first, 'the cached page differs from the fetched one');
+  assert.equal(inner.calls.length, 1, 'the provider was paid twice for one url');
+});
+
+test('an expired page is re-fetched rather than served stale', async () => {
+  const inner = new FakePage();
+  let clock = 1_000;
+  const page = new CachedPage(inner, { ttlSeconds: 60, now: () => clock });
+
+  await page.fetch('https://example.com/a');
+  clock += 61_000;
+  await page.fetch('https://example.com/a');
+
+  assert.equal(inner.calls.length, 2, 'a page past its ttl was served from cache');
+});
+
+test('concurrent readers of one url share a single fetch', async () => {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => (release = r));
+  const inner = new FakePage(async (url) => {
+    await gate;
+    return { title: 't', text: `body of ${url}` };
+  });
+  const page = new CachedPage(inner, { ttlSeconds: 60 });
+
+  const all = Promise.all([
+    page.fetch('https://example.com/a'),
+    page.fetch('https://example.com/a'),
+    page.fetch('https://example.com/a')
+  ]);
+  release();
+  const [a, b, c] = await all;
+
+  assert.equal(inner.calls.length, 1, 'three concurrent readers each paid for the same url');
+  assert.deepEqual(b, a);
+  assert.deepEqual(c, a);
+});
+
+test('a failed fetch is not cached, so the url stays retryable', async () => {
+  const inner = new FakePage();
+  const page = new CachedPage(inner, { ttlSeconds: 60 });
+
+  inner.fail = true;
+  await assert.rejects(() => page.fetch('https://example.com/a'), /upstream page fetch failed/);
+
+  inner.fail = false;
+  const ok = await page.fetch('https://example.com/a');
+  assert.equal(ok.text, 'body of https://example.com/a', 'a failed fetch poisoned the url');
 });
