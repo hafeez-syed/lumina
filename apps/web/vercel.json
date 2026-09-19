@@ -1,18 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "buildCommand": "turbo run build --filter=@lumina/web",
-  "_comment": [
-    "Set the project's Root Directory to `apps/web` in Vercel; this file is read from there.",
-    "",
-    "The build command is turbo, not `next build`, for one reason: apps/web imports",
-    "@lumina/contract, which is a COMPILED package (main: ./dist/index.js) whose dist/ is",
-    "gitignored. Vercel clones the repo, so that dist does not exist. `turbo run build",
-    "--filter=@lumina/web` follows dependsOn:['^build'] and builds the contract first —",
-    "verified locally as 2 tasks, not 1. Plain `next build` fails on an unresolvable import.",
-    "",
-    "Only this app deploys: Root Directory scopes the project to apps/web, and the gateway",
-    "and agent are deployed separately to Fly (see apps/*/fly.toml). Vercel additionally",
-    "skips builds when nothing this project depends on has changed."
-  ]
+  "buildCommand": "turbo run build --filter=@lumina/web"
 }
