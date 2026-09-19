@@ -1,6 +1,6 @@
 # LUMINA — a Perplexity-style AI search engine
 
-*Assignment 1 · FDE Agent Engineering Bootcamp, cohort 2026-03 · Week 1, due end of Week 2 · Owner: Hamza Farooq*
+_Project · FDE Agent Engineering Bootcamp, cohort 2026-03 · Week 1, due end of Week 2 · Owner: Hamza Farooq_
 
 > **Read this one.** It is the product, in about fifteen minutes of reading, and it is
 > everything you need to make design decisions. The exhaustive version — every status code,
@@ -40,20 +40,20 @@ escalates itself is a product with an unbounded bill.
 
 ## The five capabilities
 
-| | What it means | Where it comes back |
-|---|---|---|
-| **The loop** | Plan, choose a tool, observe, repeat, stop. Yours, not a framework's. Bounded, and honest about why it stopped. | Every later project. The harness is the course. |
-| **Search** | The web as a tool the agent chooses, with pages actually fetched and read rather than snippets skimmed. Cached, because repeats should be free. | ARGUS, EPYHIA |
-| **Deep search** | Query decomposition, per-sub-question retrieval, merged citations. | Module 3's Pro search and re-ranking |
-| **Memory** | Thread history, plus durable facts you can see and delete. | Module 2, VOXA |
-| **RAG** | Your own documents, chunked and indexed, cited down to the page. | ARGUS extends this exact contract |
+|                 | What it means                                                                                                                                   | Where it comes back                             |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| **The loop**    | Plan, choose a tool, observe, repeat, stop. Yours, not a framework's. Bounded, and honest about why it stopped.                                 | Every later project. The harness is the course. |
+| **Search**      | The web as a tool the agent chooses, with pages actually fetched and read rather than snippets skimmed. Cached, because repeats should be free. | ARGUS, EPYHIA                                   |
+| **Deep search** | Query decomposition, per-sub-question retrieval, merged citations.                                                                              | Module 3's Pro search and re-ranking            |
+| **Memory**      | Thread history, plus durable facts you can see and delete.                                                                                      | Module 2, VOXA                                  |
+| **RAG**         | Your own documents, chunked and indexed, cited down to the page.                                                                                | ARGUS extends this exact contract               |
 
 ## The rules that decide your grade
 
 Four, and they are the whole philosophy:
 
 **Grounded or nothing.** Every `[n]` in an answer resolves to something the system actually
-retrieved *in that request*. A citation that does not is an automatic fail, whether or not
+retrieved _in that request_. A citation that does not is an automatic fail, whether or not
 the claim happens to be true. If retrieval comes back empty, the answer says so and cites
 nothing.
 
@@ -100,7 +100,7 @@ two stores that have to agree about ids.
 
 **About the stack.** MERN is the taught path and what office hours will be able to help you
 with: MongoDB Atlas, Express, React, Node — one language from the citation chip to the
-vector query, so debugging never crosses a runtime boundary. The *contract* is what is
+vector query, so debugging never crosses a runtime boundary. The _contract_ is what is
 actually graded, and the grader speaks HTTP: if you would rather build the backend in
 something else, `/health` must name what you used, and every gate still has to pass. That is
 your call to make and your risk to carry.
@@ -110,7 +110,7 @@ your call to make and your risk to carry.
 Before you open an editor, write `DESIGN.md` from [`DESIGN.template.md`](DESIGN.template.md):
 
 1. **Components** — what are the pieces, and where does each run?
-2. **Responsibilities** — what is each piece the *only* one allowed to do?
+2. **Responsibilities** — what is each piece the _only_ one allowed to do?
 3. **Communication** — how does each pair talk, and what happens when one is down?
 4. **State** — what is stored, where, who owns it, and what is merely a cache?
 5. **Trade-offs** — three decisions a reasonable engineer would have made differently, and
@@ -132,7 +132,7 @@ genuinely deeper than quick, performance against the declared SLA, and observabi
 enough that one request id explains an answer.
 
 The three human rows are the ones automation structurally cannot do: whether a deep answer
-is *better* or merely longer, whether you read one successful and one failing trajectory end
+is _better_ or merely longer, whether you read one successful and one failing trajectory end
 to end and learned something, and whether the thing actually deploys.
 
 **Red lines** are automatic fails, listed in `eval/rubric.json`. The short version: no
@@ -149,11 +149,11 @@ evidence page are the submission. Course-wide rules are in
 
 ## Where to go next
 
-| You want | Read |
-|---|---|
-| To see it working before you read anything | [`README.md`](README.md) — start here, `pnpm dev` |
-| The exact wire format | `packages/contract/src/` — the schemas are the contract |
-| Commands, architecture, checklists, troubleshooting | [`TECHNICAL.md`](TECHNICAL.md) |
-| Every requirement, unabridged | [`SPEC.md`](SPEC.md) |
-| The rules your coding agent must not break | [`AGENTS.md`](AGENTS.md) |
-| What the numbers are | `benchmark/sla.json`, `expectations.json`, `eval/rubric.json` |
+| You want                                            | Read                                                          |
+| --------------------------------------------------- | ------------------------------------------------------------- |
+| To see it working before you read anything          | [`README.md`](README.md) — start here, `pnpm dev`             |
+| The exact wire format                               | `packages/contract/src/` — the schemas are the contract       |
+| Commands, architecture, checklists, troubleshooting | [`TECHNICAL.md`](TECHNICAL.md)                                |
+| Every requirement, unabridged                       | [`SPEC.md`](SPEC.md)                                          |
+| The rules your coding agent must not break          | [`AGENTS.md`](AGENTS.md)                                      |
+| What the numbers are                                | `benchmark/sla.json`, `expectations.json`, `eval/rubric.json` |

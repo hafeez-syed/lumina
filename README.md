@@ -1,4 +1,4 @@
-# Assignment 1: LUMINA
+# Project: LUMINA
 
 > Build a Perplexity-style AI search engine. Ask a question, get a streamed answer with
 > citations you can click, built from a live web search and from your own documents. Ask a
@@ -26,25 +26,25 @@ Requires **Node >= 24** and **pnpm 11**.
 
 ## Then read, in this order
 
-| # | Read | Why |
-|---|---|---|
-| 1 | [`PRD.md`](PRD.md) | What the product is and the four rules that decide your grade. ~15 min. |
-| 2 | `packages/contract/src/` | The contract, as zod schemas rather than prose — the literal answer to "what do I return?". Start with `sse.ts`, then `http.ts`. Best half hour you can spend. |
-| 3 | [`DESIGN.template.md`](DESIGN.template.md) | Copy to `DESIGN.md` and answer the five questions **before you write code**. It is graded. |
-| 4 | `benchmark/sla.json`, `expectations.json`, `eval/rubric.json` | The targets, the budgets, the points. Declared before you run, on purpose. |
-| 5 | [`TECHNICAL.md`](TECHNICAL.md) | The build guide: architecture, commands, checklists, troubleshooting. |
+| #   | Read                                                          | Why                                                                                                                                                            |
+| --- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | [`PRD.md`](PRD.md)                                            | What the product is and the four rules that decide your grade. ~15 min.                                                                                        |
+| 2   | `packages/contract/src/`                                      | The contract, as zod schemas rather than prose — the literal answer to "what do I return?". Start with `sse.ts`, then `http.ts`. Best half hour you can spend. |
+| 3   | [`DESIGN.template.md`](DESIGN.template.md)                    | Copy to `DESIGN.md` and answer the five questions **before you write code**. It is graded.                                                                     |
+| 4   | `benchmark/sla.json`, `expectations.json`, `eval/rubric.json` | The targets, the budgets, the points. Declared before you run, on purpose.                                                                                     |
+| 5   | [`TECHNICAL.md`](TECHNICAL.md)                                | The build guide: architecture, commands, checklists, troubleshooting.                                                                                          |
 
 Your coding agent should read [`AGENTS.md`](AGENTS.md) and [`SPEC.md`](SPEC.md) instead —
 the first is the non-negotiables, the second is every requirement stated explicitly.
 
 ## What you build
 
-| | |
-|---|---|
+|                 |                                                                                                                                                      |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ✅ **Provided** | The API contract, `501` skeletons for both services, the Atlas index script, the benchmark, the gold set and corpus, the grader, and the eval skill. |
-| 🔨 **Yours** | `apps/gateway/` — the edge: CORS, the `X-User-Id` check, request ids, logging, validation, rate limits, SSE pass-through. |
-| 🔨 **Yours** | `apps/agent/` — the work: the agent loop, its tools, memory, RAG, deep search, the jobs worker, run logs. Provider keys live only here. |
-| 🔨 **Yours** | `apps/web/` — the UI: query box, quick/deep toggle, streaming answer with citation chips, sources rail, trace and plan panels, Spaces, `/evals`. |
+| 🔨 **Yours**    | `apps/gateway/` — the edge: CORS, the `X-User-Id` check, request ids, logging, validation, rate limits, SSE pass-through.                            |
+| 🔨 **Yours**    | `apps/agent/` — the work: the agent loop, its tools, memory, RAG, deep search, the jobs worker, run logs. Provider keys live only here.              |
+| 🔨 **Yours**    | `apps/web/` — the UI: query box, quick/deep toggle, streaming answer with citation chips, sources rail, trace and plan panels, Spaces, `/evals`.     |
 
 Do not edit `packages/contract/`, `benchmark/`, `eval/`, `quality/` or `scripts/`.
 Those are the contract and the grader; editing them is a red line and it is checked.
@@ -70,16 +70,16 @@ Each step is a section in [`TECHNICAL.md`](TECHNICAL.md) with the commands and t
 
 ## Where this build has got to
 
-| Step | State |
-|---|---|
-| `/health`, threads, memory, Spaces, `/stats` | done |
-| The quick loop: `trace → sources → token → done`, caps, run logs | done |
-| Uploads + the jobs worker: `202` → parse → chunk → embed → probe → `indexed` | done |
-| Gateway: `X-User-Id`, SSE pass-through, `502` on a dead upstream | done |
-| Deep search: `plan` event and the daily cap | done — the per-sub-question fan-out is not |
-| Hybrid retrieval: vector + text, RRF-fused, page locators in the citations | done |
-| Search cache: in-process LRU over the TTL'd `searchCache` collection | done |
-| `GET /evals/report.json` | not built — `/evals` has nothing to render until it is |
+| Step                                                                         | State                                                  |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `/health`, threads, memory, Spaces, `/stats`                                 | done                                                   |
+| The quick loop: `trace → sources → token → done`, caps, run logs             | done                                                   |
+| Uploads + the jobs worker: `202` → parse → chunk → embed → probe → `indexed` | done                                                   |
+| Gateway: `X-User-Id`, SSE pass-through, `502` on a dead upstream             | done                                                   |
+| Deep search: `plan` event and the daily cap                                  | done — the per-sub-question fan-out is not             |
+| Hybrid retrieval: vector + text, RRF-fused, page locators in the citations   | done                                                   |
+| Search cache: in-process LRU over the TTL'd `searchCache` collection         | done                                                   |
+| `GET /evals/report.json`                                                     | not built — `/evals` has nothing to render until it is |
 
 `pnpm test` runs 143 tests across the two services.
 
